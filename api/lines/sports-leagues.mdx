@@ -1,0 +1,328 @@
+---
+title: 'Get sports and leagues — Pinnacle Lines API'
+sidebarTitle: 'Sports & Leagues'
+description: 'Retrieve available sports and league IDs with offering status using GET /v2/sports and GET /v2/leagues to discover active markets.'
+---
+
+Before you can request odds or fixtures, you need the `sportId` and `leagueId` values that the Pinnacle Lines API uses to scope every downstream request. The endpoints on this page let you discover which sports and leagues are currently active, map home and away teams to the `Team1`/`Team2` identifiers used in bet placement, and look up valid period numbers for each sport.
+
+---
+
+## GET /v2/sports
+
+Returns a list of every sport Pinnacle supports, together with a flag indicating whether that sport currently has open markets. This list changes very rarely, so you should call it at most once every 60 minutes and cache the results locally.
+
+<Note>
+  Calling `/v2/sports` more frequently than once per 60 minutes provides no benefit — the sport list is stable and the active-event counts embedded in the response are considered legacy data.
+</Note>
+
+### Query parameters
+
+<ParamField query="hasOfferings" type="boolean" optional>
+  When `true`, the response includes only sports that currently have at least one open event or special. Omit this parameter to receive the full sport catalogue regardless of offering status.
+</ParamField>
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -G https://api.pinnacle.com/v2/sports \
+  -H "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  -H "Accept: application/json" \
+  --data-urlencode "hasOfferings=true"
+```
+</CodeGroup>
+
+### Response fields
+
+<ResponseField name="sports" type="array">
+  Array of sport objects.
+  <Expandable title="Sport object">
+    <ResponseField name="id" type="integer">
+      Unique sport identifier. Pass this as `sportId` in all subsequent requests.
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Human-readable sport name, e.g. `"Soccer"` or `"Basketball"`.
+    </ResponseField>
+    <ResponseField name="hasOfferings" type="boolean">
+      `true` when the sport currently has at least one open event or special market.
+    </ResponseField>
+    <ResponseField name="leagueSpecialsCount" type="integer">
+      Number of league-level specials currently available for this sport.
+    </ResponseField>
+    <ResponseField name="eventSpecialsCount" type="integer">
+      Number of event-level specials currently available for this sport.
+    </ResponseField>
+    <ResponseField name="eventCount" type="integer">
+      Total number of open events for this sport.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example response
+
+```json
+{
+  "sports": [
+    {
+      "id": 29,
+      "name": "Soccer",
+      "hasOfferings": true,
+      "leagueSpecialsCount": 12,
+      "eventSpecialsCount": 34,
+      "eventCount": 210
+    },
+    {
+      "id": 4,
+      "name": "Basketball",
+      "hasOfferings": true,
+      "leagueSpecialsCount": 5,
+      "eventSpecialsCount": 8,
+      "eventCount": 47
+    },
+    {
+      "id": 15,
+      "name": "Tennis",
+      "hasOfferings": false,
+      "leagueSpecialsCount": 0,
+      "eventSpecialsCount": 0,
+      "eventCount": 0
+    }
+  ]
+}
+```
+
+---
+
+## GET /v2/leagues
+
+Returns all leagues for a given sport, including whether they have active markets and whether round-robin parlays are allowed. Pay close attention to `homeTeamType` — it tells you which team in the league maps to `Team1` versus `Team2` in bet placement, and the mapping is **not** always home = Team1.
+
+<Warning>
+  Always check `homeTeamType` before constructing a bet request. If you send the wrong `team` value, your `/v1/line` call will return `NOT_EXISTS` and your place-bet request will be rejected.
+</Warning>
+
+### Query parameters
+
+<ParamField query="sportId" type="integer" required>
+  The sport identifier returned by `/v2/sports`. For example, `29` for Soccer.
+</ParamField>
+
+<ParamField query="hasOfferings" type="boolean" optional>
+  When `true`, returns only leagues that currently have open events or specials. Omit to receive all leagues for the sport.
+</ParamField>
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -G https://api.pinnacle.com/v2/leagues \
+  -H "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  -H "Accept: application/json" \
+  --data-urlencode "sportId=29" \
+  --data-urlencode "hasOfferings=true"
+```
+</CodeGroup>
+
+### Response fields
+
+<ResponseField name="leagues" type="array">
+  Array of league objects.
+  <Expandable title="League object">
+    <ResponseField name="id" type="integer">
+      Unique league identifier. Pass this as `leagueId` in fixture, odds, and bet requests.
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Human-readable league name, e.g. `"England - Premier League"`.
+    </ResponseField>
+    <ResponseField name="homeTeamType" type="string">
+      Indicates which positional team is the home side. Possible values: `"Team1"` or `"Team2"`. Use this to correctly populate the `team` field when placing a bet — the `/odds` and `/fixtures` responses always use `home`/`away`, but the bet API expects `Team1`/`Team2`.
+    </ResponseField>
+    <ResponseField name="hasOfferings" type="boolean">
+      `true` when the league currently has at least one open event or special.
+    </ResponseField>
+    <ResponseField name="container" type="string">
+      Regional grouping for the league, usually a country or continent name.
+    </ResponseField>
+    <ResponseField name="allowRoundRobins" type="boolean">
+      `true` when round-robin parlay bets are permitted on events in this league.
+    </ResponseField>
+    <ResponseField name="isSessionType" type="boolean">
+      `true` for session-based sports (e.g. cricket sessions).
+    </ResponseField>
+    <ResponseField name="isTeaserAllowed" type="boolean">
+      `true` when teaser bets are available for events in this league.
+    </ResponseField>
+    <ResponseField name="isParentLeague" type="boolean">
+      `true` when this league is a parent of other child leagues.
+    </ResponseField>
+    <ResponseField name="parentId" type="integer">
+      For child leagues, the `id` of the parent league. Absent when `isParentLeague` is `true`.
+    </ResponseField>
+    <ResponseField name="leagueSpecialsCount" type="integer">
+      Number of league-level specials currently available.
+    </ResponseField>
+    <ResponseField name="eventSpecialsCount" type="integer">
+      Number of event-level specials currently available.
+    </ResponseField>
+    <ResponseField name="eventCount" type="integer">
+      Total number of open events in this league.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example response
+
+```json
+{
+  "leagues": [
+    {
+      "id": 2627,
+      "name": "England - Premier League",
+      "homeTeamType": "Team1",
+      "hasOfferings": true,
+      "container": "England",
+      "allowRoundRobins": true,
+      "leagueSpecialsCount": 3,
+      "eventSpecialsCount": 12,
+      "eventCount": 10
+    },
+    {
+      "id": 218153,
+      "name": "Spain - La Liga",
+      "homeTeamType": "Team2",
+      "hasOfferings": true,
+      "container": "Spain",
+      "allowRoundRobins": true,
+      "leagueSpecialsCount": 1,
+      "eventSpecialsCount": 6,
+      "eventCount": 8
+    }
+  ]
+}
+```
+
+<Tip>
+  When `homeTeamType` is `"Team2"`, the home team listed in `/fixtures` maps to `Team2` in bet requests — not `Team1` as you might expect. Build a lookup table from league IDs to `homeTeamType` values at startup to avoid mistakes at bet time.
+</Tip>
+
+---
+
+## GET /v1/periods
+
+Returns all valid betting periods for a given sport, along with human-readable labels for each market type within that period. Use this to determine which `periodNumber` values are accepted by `/v1/line` and the place-bet endpoints.
+
+Common period numbers across most sports:
+
+| Number | Meaning |
+|--------|---------|
+| `0` | Full game / full match |
+| `1` | First half / first set |
+| `2` | Second half / second set |
+| `3` | Extra time |
+| `6` | Penalty shootout |
+
+### Query parameters
+
+<ParamField query="sportId" type="integer" required>
+  The sport identifier. Period definitions vary between sports.
+</ParamField>
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -G https://api.pinnacle.com/v1/periods \
+  -H "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  -H "Accept: application/json" \
+  --data-urlencode "sportId=29"
+```
+</CodeGroup>
+
+### Example response
+
+```json
+{
+  "periods": [
+    {
+      "number": 0,
+      "description": "Match",
+      "shortDescription": "FT",
+      "spreadDescription": "Handicap",
+      "moneylineDescription": "1X2",
+      "totalDescription": "Total",
+      "team1TotalDescription": "Team 1 Goals",
+      "team2TotalDescription": "Team 2 Goals",
+      "spreadShortDescription": "HDP",
+      "moneylineShortDescription": "1X2",
+      "totalShortDescription": "O/U",
+      "team1TotalShortDescription": "Team 1 Goals",
+      "team2TotalShortDescription": "Team 2 Goals"
+    },
+    {
+      "number": 1,
+      "description": "1st Half",
+      "shortDescription": "1H",
+      "spreadDescription": "Handicap",
+      "moneylineDescription": "1X2",
+      "totalDescription": "Total",
+      "team1TotalDescription": "Team 1 Goals",
+      "team2TotalDescription": "Team 2 Goals",
+      "spreadShortDescription": "HDP",
+      "moneylineShortDescription": "1X2",
+      "totalShortDescription": "O/U",
+      "team1TotalShortDescription": "Team 1 Goals",
+      "team2TotalShortDescription": "Team 2 Goals"
+    }
+  ]
+}
+```
+
+---
+
+## GET /v2/currencies
+
+Returns all currencies that Pinnacle accepts for wagering, including each currency's exchange rate to USD. Use the `code` field when you want `/v2/odds` to return bet limits denominated in a specific currency via its `toCurrencyCode` parameter.
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl https://api.pinnacle.com/v2/currencies \
+  -H "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  -H "Accept: application/json"
+```
+</CodeGroup>
+
+### Example response
+
+```json
+{
+  "currencies": [
+    {
+      "code": "USD",
+      "name": "US Dollar",
+      "rate": 1.0
+    },
+    {
+      "code": "EUR",
+      "name": "Euro",
+      "rate": 0.9215
+    },
+    {
+      "code": "GBP",
+      "name": "British Pound",
+      "rate": 0.7892
+    },
+    {
+      "code": "AED",
+      "name": "United Arab Emirates Dirham",
+      "rate": 3.6738
+    }
+  ]
+}
+```
+
+<Note>
+  Exchange rates are updated every 24 hours following oanda.com. For non-USD currencies, Pinnacle rounds maximum bet amounts **down** to the nearest integer — for example, a USD limit that converts to £345.23 becomes £345.
+</Note>

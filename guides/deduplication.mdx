@@ -1,0 +1,142 @@
+---
+title: 'Prevent duplicate bets with uniqueRequestId'
+sidebarTitle: 'Deduplication'
+description: 'Use uniqueRequestId on every place-bet request so network errors and retries never create duplicate bets — check before retrying and reuse the same ID.'
+---
+
+Network timeouts and unexpected errors are a normal part of working with any HTTP API. The problem they create for betting is asymmetric: if a request times out, you do not know whether it reached the server and was accepted, or whether it was lost in transit. A naive retry creates a duplicate bet if the original was actually processed. The Pinnacle API solves this with a `uniqueRequestId` field on every place-bet endpoint — a UUID you generate and include in each request that lets the server deduplicate retries automatically.
+
+<Warning>
+  If you receive any unexpected error when placing a bet, that does **not** mean the bet was not placed. Always check `/v4/bets?uniqueRequestIds={id}` before retrying. Skipping this check is the most common cause of duplicate bets.
+</Warning>
+
+## How deduplication works
+
+When you submit a place-bet request with a `uniqueRequestId`, the server stores that ID after processing the request — whether it was accepted or rejected. If you retry the **same** `uniqueRequestId` within 30 minutes, the server returns `DUPLICATED_REQUEST` instead of processing a second bet. After 30 minutes, the ID expires from the deduplication cache.
+
+This guarantee applies to all bet types:
+
+- `POST /v4/bets/straight`
+- `POST /v4/bets/parlay`
+- `POST /v4/bets/special`
+- `POST /v4/bets/straight` (teaser bets)
+
+## Safe retry flow
+
+Follow these steps every time you place a bet, especially when handling errors or timeouts:
+
+<Steps>
+
+  <Step title="Generate a UUID for each intended bet">
+    Before sending any place-bet request, generate a version-4 UUID. This is your `uniqueRequestId` for this specific bet intention. Store it immediately alongside your bet details so you can reference it if the request fails.
+
+    ```python
+    import uuid
+    unique_request_id = str(uuid.uuid4())
+    # Example: "86a90ab9-fca1-4703-a11c-ce329a85584e"
+    ```
+
+    ```javascript
+    const { randomUUID } = require('crypto');
+    const uniqueRequestId = randomUUID();
+    // Example: "86a90ab9-fca1-4703-a11c-ce329a85584e"
+    ```
+  </Step>
+
+  <Step title="Include uniqueRequestId in the place-bet request body">
+    Add the UUID to your request payload. Every place-bet endpoint accepts this field at the top level of the request body.
+
+    ```json
+    {
+      "uniqueRequestId": "86a90ab9-fca1-4703-a11c-ce329a85584e",
+      "sportId": 29,
+      "leagueId": 2331,
+      "eventId": 834342247,
+      "periodNumber": 0,
+      "betType": "MONEYLINE",
+      "team": "Team1",
+      "lineId": 527557614,
+      "fillType": "NORMAL",
+      "stake": 50.00,
+      "winRiskStake": "RISK",
+      "price": 200,
+      "oddsFormat": "AMERICAN"
+    }
+    ```
+  </Step>
+
+  <Step title="On timeout or unexpected error — check first, never retry blind">
+    If the request fails with a network timeout, a 5xx error, or any other unexpected condition, do **not** immediately retry. Instead, call:
+
+    ```bash
+    curl -u username:password \
+      "https://api.pinnacle.com/v4/bets?uniqueRequestIds=86a90ab9-fca1-4703-a11c-ce329a85584e"
+    ```
+
+    An **empty `straightBets` array** (or an empty response body) means the bet was not placed and it is safe to retry.
+
+    A response containing your `uniqueRequestId` means the bet **was** processed — do not retry.
+  </Step>
+
+  <Step title="If the bet is found — stop">
+    If `/v4/bets?uniqueRequestIds={id}` returns a record for your `uniqueRequestId`, the bet was placed. Check `betStatus`:
+
+    - `ACCEPTED` — the bet is live; record the `betId` for future lookups.
+    - `PENDING_ACCEPTANCE` — the bet is in the live-delay window; keep polling.
+    - `NOT_ACCEPTED` — the bet was rejected; you may place a new bet with a **new** `uniqueRequestId`.
+  </Step>
+
+  <Step title="If the bet is NOT found — retry with the same uniqueRequestId">
+    An empty response means the server never received or processed your original request. Retry by sending the **exact same request body**, including the **same `uniqueRequestId`**. Do not generate a new UUID — the whole point of reusing the ID is to guarantee the server treats this as the same bet intention.
+
+    ```json
+    {
+      "uniqueRequestId": "86a90ab9-fca1-4703-a11c-ce329a85584e",
+      "sportId": 29,
+      "leagueId": 2331,
+      "eventId": 834342247,
+      "periodNumber": 0,
+      "betType": "MONEYLINE",
+      "team": "Team1",
+      "lineId": 527557614,
+      "fillType": "NORMAL",
+      "stake": 50.00,
+      "winRiskStake": "RISK",
+      "price": 200,
+      "oddsFormat": "AMERICAN"
+    }
+    ```
+  </Step>
+
+  <Step title="After 30 minutes — generate a new uniqueRequestId">
+    The deduplication cache expires 30 minutes after the original request was placed. If you need to retry after this window, generate a fresh UUID. Querying by the old `uniqueRequestId` via `/v4/bets` will also stop returning results after this point.
+
+    <Note>
+      If you are placing a bet on a live event and the deduplication window expires while the bet is still `PENDING_ACCEPTANCE`, query by `betlist=RUNNING` with a date range to locate the bet, or contact support if you cannot reconcile the position.
+    </Note>
+  </Step>
+
+</Steps>
+
+## DUPLICATED_REQUEST error
+
+If you receive a `DUPLICATED_REQUEST` error code in a `PROCESSED_WITH_ERROR` response, it means the server already processed a request with that `uniqueRequestId` within the last 30 minutes. This is the deduplication system working as intended.
+
+- If you intended to **retry** the same bet: the bet was already placed — check its status via `/v4/bets`.
+- If you intended to place a **new** bet: generate a new UUID for the new request.
+
+```json
+{
+  "status": "PROCESSED_WITH_ERROR",
+  "errorCode": "DUPLICATED_REQUEST",
+  "uniqueRequestId": "86a90ab9-fca1-4703-a11c-ce329a85584e"
+}
+```
+
+## RESUBMIT_REQUEST error
+
+A `RESUBMIT_REQUEST` error (HTTP 400) is different from `DUPLICATED_REQUEST`. It occurs when trading logic is updating internal parameters at the moment of your request — most commonly during high-traffic live betting. This is not an error on your side. Continue to resubmit the **same request with the same `uniqueRequestId`** until you receive a different response.
+
+<Tip>
+  Generate your UUID as early as possible in your betting workflow — ideally before you even fetch the line — so you always have it available regardless of where in the flow an error occurs.
+</Tip>

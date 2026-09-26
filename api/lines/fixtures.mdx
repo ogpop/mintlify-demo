@@ -1,0 +1,285 @@
+---
+title: 'Get fixtures and settled results — Lines API'
+sidebarTitle: 'Fixtures'
+description: 'Fetch live and pre-game event data with snapshot/delta support, parentId grouping, and specials for all sports via GET /v1/fixtures.'
+---
+
+Fixtures are the building blocks of every bet — they carry team names, start times, live status, and the event IDs you need to look up odds and place bets. The `/v1/fixtures` endpoint supports both snapshot (full state) and delta (incremental changes) modes, so you can seed your local data store with one snapshot call and then keep it in sync with lightweight delta calls. Use `parentId` to link live events back to their pre-game counterparts and to correlate corner markets and other derivative events to the same underlying match.
+
+---
+
+## GET /v1/fixtures
+
+Returns all non-settled events for a sport. When you omit the `since` parameter you receive a full snapshot; when you include it you receive only the events that changed since your last call. Always start with a snapshot, then switch to delta calls for ongoing updates.
+
+<Note>
+  Snapshot responses (no `since` parameter) are cached for up to 60 seconds. Delta responses (with `since`) are not cached, making delta calls the preferred pattern for real-time use cases.
+</Note>
+
+### Query parameters
+
+<ParamField query="sportId" type="integer" required>
+  The sport to retrieve fixtures for. Obtain valid sport IDs from `/v2/sports`.
+</ParamField>
+
+<ParamField query="leagueIds" type="array of integers" optional>
+  Comma-separated league IDs to filter the response. Pass multiple values as repeated query parameters: `leagueIds=2627&leagueIds=218153`. If omitted, all leagues for the sport are returned.
+</ParamField>
+
+<ParamField query="isLive" type="boolean" optional>
+  Set to `1` to return only events that are currently live. Any other value (or omitting the parameter) returns all events regardless of live status.
+</ParamField>
+
+<ParamField query="since" type="integer" optional>
+  Delta cursor. Set this to the `last` value from a previous `/v1/fixtures` response to receive only events that changed after that point. **Do not** pass `0` or `1` — always use the exact `last` value from the previous response. Omit entirely for a full snapshot.
+</ParamField>
+
+<ParamField query="eventIds" type="array of integers" optional>
+  Comma-separated list of specific event IDs to retrieve. Useful when you only need to refresh a known set of events.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="sportId" type="integer">
+  Echo of the requested sport ID.
+</ResponseField>
+
+<ResponseField name="last" type="integer">
+  Opaque cursor representing the point-in-time of this response. Pass it as `since` in your next delta call to receive only events that changed after this snapshot.
+</ResponseField>
+
+<ResponseField name="league" type="array">
+  List of leagues containing events.
+  <Expandable title="League object">
+    <ResponseField name="id" type="integer">
+      League ID.
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      League name.
+    </ResponseField>
+    <ResponseField name="events" type="array">
+      List of fixture objects.
+      <Expandable title="Fixture (event) object">
+        <ResponseField name="id" type="integer">
+          Unique event identifier. Use this as `eventId` in `/v2/odds`, `/v1/line`, and place-bet requests.
+        </ResponseField>
+        <ResponseField name="starts" type="string (ISO 8601)">
+          Scheduled start time in UTC.
+        </ResponseField>
+        <ResponseField name="home" type="string">
+          Home team name.
+        </ResponseField>
+        <ResponseField name="away" type="string">
+          Away team name.
+        </ResponseField>
+        <ResponseField name="rotNum" type="string">
+          Rotation number. This field is **deprecated** — use `parentId` to group related events instead.
+        </ResponseField>
+        <ResponseField name="liveStatus" type="integer">
+          Live betting status for this event:
+          - `0` — No live betting will be offered.
+          - `1` — This is an active live-betting event.
+          - `2` — Live betting will be offered on this match, but on a *different* event (the live counterpart). When you see `liveStatus=2`, look for the corresponding event with `liveStatus=1` and the same `rotNum` or a `parentId` pointing to this event.
+        </ResponseField>
+        <ResponseField name="status" type="string">
+          **Deprecated.** High-level event status: `O` (open/starting status), `H` (lines temporarily unavailable), `I` (one or more lines have a reduced maximum). Check period `status` in `/v2/odds` instead to determine whether a market is open for betting.
+        </ResponseField>
+        <ResponseField name="parlayRestriction" type="integer">
+          Parlay availability: `0` = allowed without restriction, `1` = not allowed, `2` = allowed but only one leg per event.
+        </ResponseField>
+        <ResponseField name="parentId" type="integer">
+          When present, links this event to its parent (pre-game) event. All live events (`liveStatus=1`) always have `parentId` set. Parent events are pre-game events and never carry `parentId` themselves.
+        </ResponseField>
+        <ResponseField name="altTeaser" type="boolean">
+          `true` when the event is offered with alternative teaser points.
+        </ResponseField>
+        <ResponseField name="resultingUnit" type="string">
+          Indicates the statistic used to settle bets on this event. Common values: `Regular`, `Sets`, `Games`, `Corners`, `Bookings`. Two events may be listed for the same physical match if they have different `resultingUnit` values.
+        </ResponseField>
+        <ResponseField name="version" type="integer">
+          Monotonically increasing version number for this fixture. Increments each time any fixture property changes.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example — snapshot request
+
+<CodeGroup>
+```bash cURL (snapshot)
+curl -G https://api.pinnacle.com/v1/fixtures \
+  -H "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  -H "Accept: application/json" \
+  --data-urlencode "sportId=29"
+```
+</CodeGroup>
+
+```json
+{
+  "sportId": 29,
+  "last": 148671597,
+  "league": [
+    {
+      "id": 2331,
+      "name": "Norway - 1st Division",
+      "events": [
+        {
+          "id": 837721686,
+          "starts": "2024-04-10T17:00:00Z",
+          "home": "Viking FK",
+          "away": "Mjondalen",
+          "rotNum": "6751",
+          "liveStatus": 1,
+          "status": "O",
+          "parlayRestriction": 2,
+          "parentId": 834342247,
+          "altTeaser": false,
+          "resultingUnit": "Regular",
+          "version": 3
+        },
+        {
+          "id": 834342247,
+          "starts": "2024-04-10T17:00:00Z",
+          "home": "Viking FK",
+          "away": "Mjondalen",
+          "rotNum": "6751",
+          "liveStatus": 2,
+          "status": "I",
+          "parlayRestriction": 2,
+          "altTeaser": false,
+          "resultingUnit": "Regular",
+          "version": 7
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Example — delta request
+
+Once you have a `last` value, pass it as `since` to receive only changed events:
+
+<CodeGroup>
+```bash cURL (delta)
+curl -G https://api.pinnacle.com/v1/fixtures \
+  -H "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  -H "Accept: application/json" \
+  --data-urlencode "sportId=29" \
+  --data-urlencode "since=148671597"
+```
+</CodeGroup>
+
+<Tip>
+  Use `parentId` to correlate live and pre-game events without relying on rotation numbers. A live event (`liveStatus=1`) will always point via `parentId` to its corresponding pre-game parent event (`liveStatus=0` or `liveStatus=2`). Parent events never carry `parentId` themselves.
+</Tip>
+
+---
+
+## GET /v1/fixtures/special
+
+Returns all non-settled specials (props, futures, and multi-way markets) for a sport. Each special includes a `contestants` array representing the available selections, and optionally an `event` object linking the special to a specific fixture from `/v1/fixtures`.
+
+### Query parameters
+
+<ParamField query="sportId" type="integer" required>
+  Sport ID to retrieve specials for.
+</ParamField>
+
+<ParamField query="leagueIds" type="array of integers" optional>
+  Comma-separated league IDs to narrow results.
+</ParamField>
+
+<ParamField query="since" type="integer" optional>
+  Delta cursor from a previous `/v1/fixtures/special` response. Omit for a full snapshot.
+</ParamField>
+
+<ParamField query="category" type="string" optional>
+  Filter by special category, e.g. `"Outright Winner"` or `"1/4 Totals"`.
+</ParamField>
+
+<ParamField query="eventId" type="integer" optional>
+  Return only specials associated with a specific fixture event ID.
+</ParamField>
+
+<ParamField query="specialId" type="integer" optional>
+  Return a specific special by its ID.
+</ParamField>
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -G https://api.pinnacle.com/v1/fixtures/special \
+  -H "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  -H "Accept: application/json" \
+  --data-urlencode "sportId=4"
+```
+</CodeGroup>
+
+### Example response
+
+```json
+{
+  "sportId": 4,
+  "last": 636433059508250600,
+  "leagues": [
+    {
+      "id": 487,
+      "specials": [
+        {
+          "id": 9,
+          "betType": "MULTI_WAY_HEAD_TO_HEAD",
+          "name": "Who will win the NBA Finals?",
+          "date": "2024-06-01T00:00:00Z",
+          "cutoff": "2024-06-01T00:00:00Z",
+          "category": "Outright Winner",
+          "units": "",
+          "status": "I",
+          "contestants": [
+            { "id": 17, "name": "Golden State Warriors", "rotNum": "100" },
+            { "id": 18, "name": "Cleveland Cavaliers",   "rotNum": "101" },
+            { "id": 19, "name": "San Antonio Spurs",     "rotNum": "102" },
+            { "id": 20, "name": "Chicago Bulls",         "rotNum": "103" }
+          ]
+        },
+        {
+          "id": 1,
+          "betType": "MULTI_WAY_HEAD_TO_HEAD",
+          "name": "Will the 4th quarter total be odd or even?",
+          "date": "2024-06-01T14:00:00Z",
+          "cutoff": "2024-06-01T14:00:00Z",
+          "category": "1/4 Totals",
+          "units": "",
+          "status": "I",
+          "event": {
+            "id": 1051780418,
+            "periodNumber": 0,
+            "home": "Boston Celtics",
+            "away": "Miami Heat"
+          },
+          "contestants": [
+            { "id": 1, "name": "Odd",  "rotNum": "100" },
+            { "id": 2, "name": "Even", "rotNum": "101" }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+<Note>
+  The `event` object inside a special links it back to a specific fixture. Use the `event.id` to look up the parent fixture from `/v1/fixtures` and the `event.periodNumber` to scope the market to the correct game period.
+</Note>
+
+---
+
+## Deprecated settled endpoints
+
+<Warning>
+  `/v1/fixtures/settled` and `/v1/fixtures/special/settled` are **deprecated** with an end-of-life date of **November 1, 2026**. Do not build new integrations against these endpoints. Migrate to the Bets API for settlement data.
+</Warning>
+
+These endpoints returned events and specials settled in the last 24 hours for a given sport. They supported the same `sportId`, `leagueIds`, and `since` delta pattern as their non-settled counterparts.

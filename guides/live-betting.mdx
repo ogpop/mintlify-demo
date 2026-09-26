@@ -1,0 +1,173 @@
+---
+title: 'Live in-running betting with the Pinnacle API'
+sidebarTitle: 'Live Betting'
+description: 'Handle live-delay bets, PENDING_ACCEPTANCE status, and uniqueRequestId polling to safely place and confirm in-running wagers via the Pinnacle API.'
+---
+
+Live betting works through the same place-bet endpoints as pre-game wagering, but the response lifecycle is different. When you place a bet on an in-running event, Pinnacle applies a live delay of approximately six seconds before accepting or rejecting it. During that window the bet sits in `PENDING_ACCEPTANCE` and has no `betId` yet — you must track it by `uniqueRequestId` instead. Understanding this flow lets you poll correctly, avoid duplicate bets, and handle rejections cleanly.
+
+## Identifying live events
+
+Live events have `liveStatus=1` in the `/v1/fixtures` response and **always** carry a `parentId` that points to their pre-game parent event. Parent events themselves are pre-game (`liveStatus=0` or `liveStatus=2`) and never have a `parentId`.
+
+```bash
+# Retrieve only live events for soccer (sportId=29)
+curl -u username:password \
+  "https://api.pinnacle.com/v1/fixtures?sportId=29&isLive=1"
+```
+
+You can retrieve live-only odds in the same way:
+
+```bash
+curl -u username:password \
+  "https://api.pinnacle.com/v2/odds?sportId=29&isLive=1&oddsFormat=American"
+```
+
+<Note>
+  In some sports, Pinnacle may offer more than one live event associated with the same pre-game parent — for example, separate events for different result types (e.g. match result vs. corners). Group these by `parentId` to understand the full picture of what is offered in-running.
+</Note>
+
+## Checking the in-running state
+
+Call `GET /v1/inrunning` to retrieve the current match state and elapsed time for live soccer events. This endpoint is useful for confirming a game is in the period you expect before placing.
+
+```bash
+curl -u username:password \
+  "https://api.pinnacle.com/v1/inrunning"
+```
+
+The response lists events with a `state` integer (e.g. `1` = first half in progress, `2` = half-time, `3` = second half) and an `elapsed` value in minutes.
+
+## Placing a live bet
+
+Place live bets the same way as pre-game bets — `POST /v4/bets/straight`, `POST /v4/bets/parlay`, or `POST /v4/bets/special` — but always include a `uniqueRequestId`. Because live odds change frequently, `NOT_EXISTS` responses from `/v1/line` are more common in-running than pre-game. Re-fetch odds and retry if this happens.
+
+```bash
+curl -u username:password \
+  -X POST "https://api.pinnacle.com/v4/bets/straight" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "uniqueRequestId": "86a90ab9-fca1-4703-a11c-ce329a85584e",
+    "sportId": 29,
+    "leagueId": 5595,
+    "eventId": 837721686,
+    "periodNumber": 0,
+    "betType": "MONEYLINE",
+    "team": "Team1",
+    "lineId": 527600100,
+    "fillType": "NORMAL",
+    "stake": 50.00,
+    "winRiskStake": "RISK",
+    "price": -476,
+    "oddsFormat": "AMERICAN"
+  }'
+```
+
+The immediate response for a live bet will look like this — no `betId` is present:
+
+```json
+{
+  "status": "PENDING_ACCEPTANCE",
+  "uniqueRequestId": "86a90ab9-fca1-4703-a11c-ce329a85584e"
+}
+```
+
+## Polling for acceptance
+
+Because the live delay is approximately six seconds, wait at least six seconds before making your first status check. Poll `GET /v4/bets?uniqueRequestIds={id}` every few seconds until the status changes.
+
+<Warning>
+  The `RUNNING` bet list (`/v4/bets?betlist=RUNNING`) does **not** return live-delay bets that are in `PENDING_ACCEPTANCE` or `NOT_ACCEPTED` status. You must use the `uniqueRequestIds` parameter to track in-flight live bets.
+</Warning>
+
+### Status 1: PENDING_ACCEPTANCE
+
+The bet is still within the live delay window. Continue polling.
+
+```json
+{
+  "straightBets": [
+    {
+      "uniqueRequestId": "86a90ab9-fca1-4703-a11c-ce329a85584e",
+      "betStatus": "PENDING_ACCEPTANCE"
+    }
+  ]
+}
+```
+
+### Status 2: NOT_ACCEPTED
+
+The bet was rejected after the delay — typically because the line or score changed during the window. The `uniqueRequestId` is still valid for querying until the 30-minute cache expires.
+
+```json
+{
+  "straightBets": [
+    {
+      "uniqueRequestId": "86a90ab9-fca1-4703-a11c-ce329a85584e",
+      "betStatus": "NOT_ACCEPTED"
+    }
+  ]
+}
+```
+
+A `NOT_ACCEPTED` bet was never placed. You can safely retry by generating a **new** `uniqueRequestId`, re-fetching current odds, and resubmitting.
+
+### Status 3: ACCEPTED
+
+The bet is confirmed. The full bet details are returned including the `betId`, which you can use for all future lookups.
+
+```json
+{
+  "straightBets": [
+    {
+      "betId": 800110193,
+      "uniqueRequestId": "86a90ab9-fca1-4703-a11c-ce329a85584e",
+      "wagerNumber": 1,
+      "placedAt": "2017-12-20T21:57:22Z",
+      "betStatus": "ACCEPTED",
+      "betType": "MONEYLINE",
+      "win": 2519.25,
+      "risk": 11991.63,
+      "oddsFormat": "AMERICAN",
+      "updateSequence": 175277412,
+      "sportId": 29,
+      "leagueId": 5595,
+      "eventId": 799939900,
+      "price": -476,
+      "teamName": "Universitario",
+      "team1": "Universitario",
+      "team2": "Club Petrolero",
+      "periodNumber": 0,
+      "isLive": "TRUE"
+    }
+  ]
+}
+```
+
+Once you have the `betId`, switch to querying by `betIds` for all future status checks on this bet.
+
+## Best practices for live betting
+
+<Steps>
+
+  <Step title="Wait 6 seconds before your first poll">
+    The live delay is approximately six seconds. Polling earlier will always return `PENDING_ACCEPTANCE` and wastes rate-limit budget.
+  </Step>
+
+  <Step title="Poll every few seconds until resolved">
+    After the initial wait, check the status every 2–3 seconds. Status transitions from `PENDING_ACCEPTANCE` to either `ACCEPTED` or `NOT_ACCEPTED` — it does not remain in pending indefinitely.
+  </Step>
+
+  <Step title="Handle NOT_ACCEPTED as a safe retry">
+    A `NOT_ACCEPTED` response means the bet was **not** placed. It is safe to retry. Generate a new `uniqueRequestId`, re-fetch the current odds for the event, and resubmit if the selection is still available.
+  </Step>
+
+  <Step title="Respect the 30-minute cache window">
+    Thirty minutes after placing a bet, the `uniqueRequestId` is no longer returned. After this window, query by `betlist` and date range, or by `betIds` if you recorded the `betId` from an `ACCEPTED` response.
+  </Step>
+
+  <Step title="Expect frequent NOT_EXISTS from /line">
+    Live odds update constantly. Receiving `NOT_EXISTS` from `GET /v1/line` is common for in-running events. Re-fetch `/v2/odds` and rebuild your request with the latest line data.
+  </Step>
+
+</Steps>

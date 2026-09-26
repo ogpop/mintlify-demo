@@ -1,0 +1,267 @@
+---
+title: 'Pinnacle API frequently asked questions'
+sidebarTitle: 'FAQ'
+description: 'Answers to common Pinnacle API questions covering teams, events, markets, bet placement, errors, rate limits, and currency handling.'
+---
+
+This page answers the most common questions developers encounter when integrating with the Pinnacle API. Topics range from fixture and odds data modelling to bet placement, error handling, and access requirements. If you don't find what you need here, check the relevant endpoint reference or contact [b2b@pinnacle.com](mailto:b2b@pinnacle.com).
+
+## Events and fixtures
+
+<AccordionGroup>
+  <Accordion title="Is the home team always Team1?">
+    No. When you place a bet, you specify `team` as either `team1` or `team2`. In the `/odds` and `/fixtures` responses, teams are referred to as `home` and `away`. The mapping between `home`/`away` and `team1`/`team2` is defined by the `homeTeamType` property in the `/leagues` response.
+
+    See the [Getting Started](/getting-started) guide for a full walkthrough of how to place a bet correctly.
+  </Accordion>
+
+  <Accordion title="How do I find associated events?">
+    Use the `parentId` field from [Get Fixtures](https://pinnacleapi.github.io/linesapi#operation/Fixtures_V1_Get) to group events together. A few key rules:
+
+    - **Parent events** are pre-game events (`liveStatus=0` or `liveStatus=2`) and never have a `parentId`.
+    - **Live events** (`liveStatus=1`) always have a `parentId`.
+    - A single parent event may have multiple child events when they have different `resultingUnit` values or when multiple events are needed to offer alternative odds.
+
+    ```json
+    {
+      "sportId": 29,
+      "last": 148671597,
+      "league": [
+        {
+          "id": 2331,
+          "name": "Norway - 1st Division",
+          "events": [
+            {
+              "id": 837721686,
+              "starts": "2018-04-10T17:00:00Z",
+              "home": "Viking Fk",
+              "away": "Mjondalen",
+              "rotNum": "6751",
+              "liveStatus": 1,
+              "status": "O",
+              "parlayRestriction": 2,
+              "parentId": 834342247,
+              "altTeaser": false
+            },
+            {
+              "id": 834342247,
+              "starts": "2018-04-10T17:00:00Z",
+              "home": "Viking Fk",
+              "away": "Mjondalen",
+              "rotNum": "6751",
+              "liveStatus": 2,
+              "status": "I",
+              "parlayRestriction": 2,
+              "altTeaser": false
+            }
+          ]
+        }
+      ]
+    }
+    ```
+
+    In this example, `834342247` is the pre-game parent event and `837721686` is the associated live event.
+  </Accordion>
+
+  <Accordion title="How do I handle duplicate parent events?">
+    If Pinnacle creates a parent event with incorrect immutable properties (such as participant names or league), a new corrected parent event is created. When you detect a duplicate, always use the event with the **greater `id` value**. Additionally, monitor the `/fixtures/settled` endpoint and discard any event that appears there as deleted or settled.
+  </Accordion>
+
+  <Accordion title="How do I find props and futures markets?">
+    Props and futures are offered as specials. Call `/fixtures/special` and `/odds/special` to retrieve them. Each special includes an `event` object that links it back to the associated fixture from `/fixtures`:
+
+    ```json
+    {
+      "id": 1065232780,
+      "event": {
+        "id": 1051780418,
+        "periodNumber": 1,
+        "home": "Malta",
+        "away": "Norway"
+      }
+    }
+    ```
+
+    Use the `event.id` field to join the special back to the parent fixture.
+  </Accordion>
+</AccordionGroup>
+
+## Markets and odds
+
+<AccordionGroup>
+  <Accordion title="When is a market open for betting?">
+    A market is open for betting when **all three** of the following conditions are true in the `/odds` response:
+
+    1. The period `status` equals `1`
+    2. The market is priced (the market object is present)
+    3. The period `cutoff` is in the future
+
+    When a market such as `moneyline` is not offered, the entire object is absent from the response. The example below shows an open period with spread and total markets priced:
+
+    ```json
+    {
+      "lineId": 527557614,
+      "number": 1,
+      "cutoff": "2018-06-30T21:00:00Z",
+      "maxSpread": 250,
+      "maxTotal": 250,
+      "status": 1,
+      "spreads": [
+        {
+          "hdp": -0.25,
+          "home": 140,
+          "away": -172
+        }
+      ],
+      "totals": [
+        {
+          "points": 0.75,
+          "over": -128,
+          "under": 107
+        }
+      ]
+    }
+    ```
+
+    <Note>
+      For live events, odds and period `status` change frequently. Expect to see `NOT_EXISTS` from the `/line` endpoint more often than you would for pre-game events.
+    </Note>
+  </Accordion>
+
+  <Accordion title="How do I get odds changes efficiently?">
+    Use a snapshot-then-delta polling pattern:
+
+    1. **Snapshot call:** Call `/odds` without the `since` parameter. This returns a full cached snapshot of all current odds.
+    2. **Delta calls:** Call `/odds` with the `since` value from the snapshot response. This returns only the periods that have changed, with all of their currently offered markets.
+
+    **Important:** A delta response includes all markets for any changed period — not just the specific market that changed. If period `number=0` has no changes, it will not appear in the delta response at all.
+
+    **Example:**
+    - Snapshot returns period `0` and period `1`, both with `moneyline` and `spreads`.
+    - Delta returns only period `1` with `moneyline` and `totals`.
+    - This means period `0` is unchanged, and on period `1` the `spreads` market is no longer offered while `totals` are now available and `moneyline` may have new prices.
+  </Accordion>
+
+  <Accordion title="How do I calculate max risk from max volume?">
+    The `/odds` response returns max volume limits. To convert max volume to max risk, use the following formula with decimal odds:
+
+    - If `price > 2`: `maxRisk = maxVolume`
+    - If `price < 2`: `maxRisk = maxVolume / (price - 1)`
+
+    **Example:** Given this moneyline offering with `maxMoneyline: 250`:
+
+    ```json
+    {
+      "lineId": 242220498,
+      "number": 1,
+      "cutoff": "2019-08-30T21:00:00Z",
+      "maxMoneyline": 250,
+      "status": 1,
+      "moneyline": {
+        "home": 1.819,
+        "away": 2.03
+      }
+    }
+    ```
+
+    - **Away team** (`price = 2.03 > 2`): `maxRisk = 250`
+    - **Home team** (`price = 1.819 < 2`): `maxRisk = 250 / (1.819 - 1) = 250 / 0.819 ≈ 305`
+  </Accordion>
+
+  <Accordion title="How do you calculate max bet amounts for non-USD currencies?">
+    Pinnacle uses exchange rates from [oanda.com](https://www.oanda.com), updated every 24 hours. For non-USD currencies, the converted amount is **rounded down to the nearest integer**. For example, a maximum bet of £345.23 becomes £345.
+  </Accordion>
+
+  <Accordion title="What time zone does the API use?">
+    All times returned by the API are in **GMT**.
+  </Accordion>
+</AccordionGroup>
+
+## Bet placement
+
+<AccordionGroup>
+  <Accordion title="How do I place a bet on live events?">
+    Live-delay bets are handled differently from pre-game bets. A `betId` is not assigned until the bet is `ACCEPTED`. After placing a live bet, poll `/v4/bets?uniqueRequestIds=<your-uniqueRequestId>` starting approximately **6 seconds after placement**.
+
+    While the bet is pending, the response looks like this:
+
+    ```json
+    {
+      "straightBets": [
+        {
+          "uniqueRequestId": "86a90ab9-fca1-4703-a11c-ce329a85584e",
+          "betStatus": "PENDING_ACCEPTANCE"
+        }
+      ]
+    }
+    ```
+
+    If the bet is **not accepted**:
+
+    ```json
+    {
+      "straightBets": [
+        {
+          "uniqueRequestId": "86a90ab9-fca1-4703-a11c-ce329a85584e",
+          "betStatus": "NOT_ACCEPTED"
+        }
+      ]
+    }
+    ```
+
+    If the bet is **accepted**, the full bet object is returned including `betId`, `win`, `risk`, and all market details.
+
+    <Note>
+      Pinnacle stops returning responses for a given `uniqueRequestId` 30 minutes after placement, due to cache cleanup.
+    </Note>
+  </Accordion>
+
+  <Accordion title="How do I handle unexpected errors when placing a bet?">
+    An unexpected error from a place-bet operation does **not** mean your bet was not placed. Always call `/v4/bets?uniqueRequestIds=<your-uniqueRequestId>` to check whether the bet was accepted before taking any further action.
+
+    If you retry the placement, **reuse the same `uniqueRequestId`** in the request. This ensures deduplication and prevents duplicate bets from being placed.
+  </Accordion>
+
+  <Accordion title="How do I handle a RESUBMIT_REQUEST error?">
+    The `RESUBMIT_REQUEST` error occurs when Pinnacle's trading logic is updating internal parameters. This is not an error on your side, and it is not an API error. Continue resubmitting your wager with the same `uniqueRequestId` until you receive a different response.
+  </Accordion>
+</AccordionGroup>
+
+## Errors and troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Why am I getting NOT_EXISTS from /line?">
+    The `/line` endpoint returns `NOT_EXISTS` for several reasons. Check each of the following:
+
+    1. **Incorrect parameters** — Verify that your `periodNumber`, `eventId`, `leagueId`, and `sportId` are all correct. Different periods of the same match can be offered across different event IDs, and market types may be split across events.
+    2. **Cutoff in the past** — The period's `cutoff` datetime has already passed.
+    3. **No prices available** — The selection has no prices at the current moment.
+    4. **Incorrect `handicap`, `team`, or `side`** — Double-check these values against the current `/odds` response.
+    5. **Period `status=2` (offline)** — The period is temporarily offline for betting.
+  </Accordion>
+
+  <Accordion title="Why am I getting denied access on Esports?">
+    Access to Esports markets requires special authorization beyond standard API access. Contact [b2b@pinnacle.com](mailto:b2b@pinnacle.com) and explain your business case to request access.
+  </Accordion>
+</AccordionGroup>
+
+## Access and data
+
+<AccordionGroup>
+  <Accordion title="How do I get API access as an affiliate?">
+    To access the API as an affiliate, you must refer **5 new funded signups within the previous 3 months**. If you fail to meet this threshold, Pinnacle may rescind your API access. See the [Fair Use Policy](/fair-use-policy) for full details.
+  </Accordion>
+
+  <Accordion title="How often can I refresh odds?">
+    Polling frequency is governed by the rate limiting rules in the Fair Use Policy. See the [Rate Limiting](/concepts/rate-limiting) page for the current thresholds and best practices.
+  </Accordion>
+
+  <Accordion title="Do you cache responses? For how long?">
+    - **Snapshot calls** to `Get Odds` and `Get Fixtures` (without the `since` parameter) are cached for **60 seconds**.
+    - **Delta calls** to `Get Odds` and `Get Fixtures` (with the `since` parameter) are **not cached**.
+  </Accordion>
+
+  <Accordion title="How do I return only sports and leagues that have data?">
+    Both the `Get Sports` and `Get Leagues` operations include a `hasOfferings` boolean property. Filter your results to only those where `hasOfferings` is `true` to avoid making unnecessary downstream calls for sports or leagues with no available markets.
+  </Accordion>
+</AccordionGroup>

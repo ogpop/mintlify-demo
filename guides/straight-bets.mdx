@@ -1,0 +1,326 @@
+---
+title: 'Place a straight bet with the Pinnacle API'
+sidebarTitle: 'Straight Bets'
+description: 'Follow the four-step flow — get fixtures, fetch odds, check the line, and place your bet — to submit a straight wager via the Pinnacle API.'
+---
+
+Straight bets are single-outcome wagers covering spread, moneyline, totals, and team totals markets. The API uses a four-step flow that keeps your bet data consistent: you first discover available events, retrieve live odds, optionally validate the exact line and limits, and then submit the bet request with the identifiers you collected along the way.
+
+<Steps>
+
+  <Step title="Get Fixtures">
+
+    Call `GET /v1/fixtures` to retrieve all non-settled events for a sport. Pass `sportId` as a required query parameter. Filter by `leagueIds` or `eventIds` to narrow results.
+
+    **Snapshot vs. delta requests**
+
+    - **Snapshot** (no `since` parameter): returns the full current list, cached up to 60 seconds. Use this for your initial load.
+    - **Delta** (with `since` parameter): returns only the events that changed since your last request. Pass the `last` value from the previous response as `since`. Delta calls are not cached, so use them for polling updates.
+
+    <Warning>
+      When you omit the `since` parameter, fixtures are delayed up to one minute. Always use `since` once you have the initial snapshot to stay current.
+    </Warning>
+
+    ```bash
+    curl -u username:password \
+      "https://api.pinnacle.com/v1/fixtures?sportId=29"
+    ```
+
+    **Delta request (incremental update):**
+
+    ```bash
+    curl -u username:password \
+      "https://api.pinnacle.com/v1/fixtures?sportId=29&since=148671597"
+    ```
+
+    The response groups events under leagues. Note the `id`, `home`, `away`, and `liveStatus` of each event — you will need these in subsequent steps.
+
+    ```json
+    {
+      "sportId": 29,
+      "last": 148671597,
+      "league": [
+        {
+          "id": 2331,
+          "name": "Norway - 1st Division",
+          "events": [
+            {
+              "id": 834342247,
+              "starts": "2024-06-15T17:00:00Z",
+              "home": "Viking FK",
+              "away": "Mjondalen",
+              "rotNum": "6751",
+              "liveStatus": 0,
+              "status": "O",
+              "parlayRestriction": 0,
+              "altTeaser": false
+            }
+          ]
+        }
+      ]
+    }
+    ```
+
+  </Step>
+
+  <Step title="Get Odds">
+
+    Call `GET /v2/odds` to retrieve current prices for all non-settled events. Pass the same `sportId`. Use the `since` parameter for delta updates, just like fixtures.
+
+    ```bash
+    curl -u username:password \
+      "https://api.pinnacle.com/v2/odds?sportId=29&oddsFormat=American"
+    ```
+
+    The response nests prices under leagues → events → periods. Each period object contains a `lineId`, a `number` (period identifier), market sub-objects, and volume limits.
+
+    ```json
+    {
+      "sportId": 29,
+      "last": 527557700,
+      "leagues": [
+        {
+          "id": 2331,
+          "events": [
+            {
+              "id": 834342247,
+              "periods": [
+                {
+                  "lineId": 527557614,
+                  "number": 0,
+                  "cutoff": "2024-06-15T17:00:00Z",
+                  "status": 1,
+                  "maxSpread": 250,
+                  "maxMoneyline": 250,
+                  "maxTotal": 250,
+                  "spreads": [
+                    {
+                      "hdp": -0.25,
+                      "home": 140,
+                      "away": -172
+                    },
+                    {
+                      "altLineId": 527557700,
+                      "hdp": -0.5,
+                      "home": 175,
+                      "away": -218
+                    }
+                  ],
+                  "moneyline": {
+                    "home": 200,
+                    "away": -240,
+                    "draw": 310
+                  },
+                  "totals": [
+                    {
+                      "points": 0.75,
+                      "over": -128,
+                      "under": 107
+                    },
+                    {
+                      "altLineId": 527557800,
+                      "points": 1.0,
+                      "over": -155,
+                      "under": 130
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+    ```
+
+    **Key fields to record:**
+
+    | Field | Where it lives | How you use it |
+    |---|---|---|
+    | `lineId` | `period.lineId` | Required in Place Bet |
+    | `altLineId` | `spread.altLineId` or `total.altLineId` | Required when betting an alternate line |
+    | `number` | `period.number` | Maps to `periodNumber` in Place Bet |
+    | `hdp` | `spread.hdp` | Maps to `handicap` in Place Bet |
+    | `points` | `total.points` | Maps to `handicap` in Place Bet |
+
+    <Note>
+      A missing market object (e.g. no `moneyline` key) means that market is not offered right now. Check `period.status` — a value of `2` means the period is offline.
+    </Note>
+
+  </Step>
+
+  <Step title="Get Line (Optional)">
+
+    Call `GET /v1/line` to retrieve the exact current price, minimum and maximum bet limits, and the live `lineId` for a specific selection. Use this step when you need precise limits or want to confirm availability before placing a bet.
+
+    ```bash
+    curl -u username:password \
+      "https://api.pinnacle.com/v1/line?sportId=29&leagueId=2331&eventId=834342247\
+    &periodNumber=0&betType=SPREAD&team=Team1&handicap=-0.25&oddsFormat=American"
+    ```
+
+    A successful response looks like:
+
+    ```json
+    {
+      "status": "SUCCESS",
+      "price": 140,
+      "lineId": 527557614,
+      "altLineId": null,
+      "maxRiskStake": 250.00,
+      "minRiskStake": 1.00,
+      "maxWinStake": 357.14,
+      "minWinStake": 0.59,
+      "effectiveAsOf": "2024-06-15T14:22:00Z"
+    }
+    ```
+
+    If the response returns `"status": "NOT_EXISTS"`, the line is no longer offered. Do not loop on this endpoint — call it once per selection before placing.
+
+    <Warning>
+      Do not call `/v1/line` in a polling loop. Excessive calls violate the fair-use policy. Use it once per bet to validate limits and confirm the selection is still available.
+    </Warning>
+
+  </Step>
+
+  <Step title="Place Bet">
+
+    Submit `POST /v4/bets/straight` with a JSON body. Collect `sportId`, `leagueId`, `eventId`, `periodNumber`, `lineId`, and `altLineId` from the previous steps.
+
+    **Request body fields:**
+
+    | Field | Required | Description |
+    |---|---|---|
+    | `uniqueRequestId` | Yes | UUID v4 you generate. Used for deduplication. |
+    | `sportId` | Yes | From the odds response. |
+    | `leagueId` | Yes | From the odds response (`league.id`). |
+    | `eventId` | Yes | From the odds response (`event.id`). |
+    | `periodNumber` | Yes | From `period.number`. |
+    | `betType` | Yes | `SPREAD`, `MONEYLINE`, `TOTAL_POINTS`, or `TEAM_TOTAL_POINTS`. |
+    | `team` | Conditional | `Team1`, `Team2`, or `Draw`. Required for SPREAD, MONEYLINE, TEAM_TOTAL_POINTS. |
+    | `side` | Conditional | `OVER` or `UNDER`. Required for TOTAL_POINTS and TEAM_TOTAL_POINTS. |
+    | `handicap` | Conditional | `spread.hdp`, `total.points`, or team total points. Required for SPREAD, TOTAL_POINTS, TEAM_TOTAL_POINTS. |
+    | `lineId` | Yes | From `period.lineId`. |
+    | `altLineId` | Conditional | From `spread.altLineId` or `total.altLineId`. Required when betting an alternate line. |
+    | `pitcher1MustStart` | Baseball only | Whether pitcher 1 must start. |
+    | `pitcher2MustStart` | Baseball only | Whether pitcher 2 must start. |
+    | `fillType` | Yes | `NORMAL`, `FILLANDKILL`, or `FILLMAXLIMIT`. |
+    | `stake` | Yes | Amount in your account currency. |
+    | `winRiskStake` | Yes | `WIN` — stake is the win amount; `RISK` — stake is the risk amount. |
+    | `price` | Yes | The price you saw when deciding to bet. |
+    | `oddsFormat` | Yes | `AMERICAN`, `DECIMAL`, `HONGKONG`, `INDONESIAN`, or `MALAY`. |
+    | `acceptBetterLine` | No | If `true`, accepts a bet when the line moves in your favor. |
+
+    **Mapping from Get Odds response to Place Bet request:**
+
+    | Place Bet parameter | Get Odds response property |
+    |---|---|
+    | `sportId` | `sportId` |
+    | `leagueId` | `league.id` |
+    | `eventId` | `event.id` |
+    | `periodNumber` | `period.number` |
+    | `team` | Determined by `homeTeamType` from `/v2/leagues`. If `homeTeamType=Team1` and you want the away team, set `team=Team2`. For a draw, set `team=Draw`. |
+    | `handicap` | `spread.hdp` / `total.points` / `teamTotal.points` |
+    | `lineId` | `period.lineId` |
+    | `altLineId` | `spread.altLineId` or `total.altLineId` |
+
+    <Warning>
+      Always send both `lineId` and `altLineId` when they are present. If you select an alternate line price but omit `altLineId` from the request, the API places your bet on the **main line** instead — not the alternate line you intended.
+    </Warning>
+
+    **Example: moneyline bet on the home team**
+
+    ```bash
+    curl -u username:password \
+      -X POST "https://api.pinnacle.com/v4/bets/straight" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "uniqueRequestId": "86a90ab9-fca1-4703-a11c-ce329a85584e",
+        "sportId": 29,
+        "leagueId": 2331,
+        "eventId": 834342247,
+        "periodNumber": 0,
+        "betType": "MONEYLINE",
+        "team": "Team1",
+        "lineId": 527557614,
+        "altLineId": null,
+        "fillType": "NORMAL",
+        "stake": 50.00,
+        "winRiskStake": "RISK",
+        "price": 200,
+        "oddsFormat": "AMERICAN",
+        "acceptBetterLine": true
+      }'
+    ```
+
+    **Example: spread bet on an alternate line**
+
+    ```json
+    {
+      "uniqueRequestId": "c3d4e5f6-a1b2-4c3d-8e9f-0a1b2c3d4e5f",
+      "sportId": 29,
+      "leagueId": 2331,
+      "eventId": 834342247,
+      "periodNumber": 0,
+      "betType": "SPREAD",
+      "team": "Team1",
+      "handicap": -0.5,
+      "lineId": 527557614,
+      "altLineId": 527557700,
+      "fillType": "NORMAL",
+      "stake": 25.00,
+      "winRiskStake": "RISK",
+      "price": 175,
+      "oddsFormat": "AMERICAN"
+    }
+    ```
+
+    **Successful response:**
+
+    ```json
+    {
+      "status": "ACCEPTED",
+      "uniqueRequestId": "86a90ab9-fca1-4703-a11c-ce329a85584e",
+      "betId": 759629245,
+      "win": 100.00,
+      "risk": 50.00,
+      "price": 200,
+      "betterLineWasAccepted": false
+    }
+    ```
+
+    If `status` is `PROCESSED_WITH_ERROR`, check the `errorCode` field. Common codes include `LINE_CHANGED` (re-fetch odds and retry with a new `uniqueRequestId`) and `INSUFFICIENT_FUNDS`.
+
+    For live bets, the response may return `PENDING_ACCEPTANCE` without a `betId`. See Step 5 for how to handle this.
+
+    **`fillType` options:**
+
+    | Value | Behaviour |
+    |---|---|
+    | `NORMAL` | Places the bet at exactly the stake you specified. Rejected if stake exceeds the limit. |
+    | `FILLANDKILL` | If stake exceeds the limit, the bet is placed at the maximum limit; otherwise placed at your stake. |
+    | `FILLMAXLIMIT` | Ignores your stake and always bets the current maximum limit. |
+
+  </Step>
+
+  <Step title="Verify Bet">
+
+    After placing a bet, confirm it was accepted by calling `GET /v4/bets`. For pre-game bets, prefer `betIds` once you have a `betId`. For live bets in `PENDING_ACCEPTANCE`, use `uniqueRequestIds`.
+
+    ```bash
+    # By betId (preferred for accepted pre-game bets)
+    curl -u username:password \
+      "https://api.pinnacle.com/v4/bets?betids=759629245"
+
+    # By uniqueRequestId (required for live bets pending acceptance)
+    curl -u username:password \
+      "https://api.pinnacle.com/v4/bets?uniqueRequestIds=86a90ab9-fca1-4703-a11c-ce329a85584e"
+    ```
+
+    <Note>
+      Querying by `uniqueRequestIds` is only supported for up to 30 minutes after the bet was placed. After that window, use `betIds` or a date-range query. An empty response means the bet was not placed.
+    </Note>
+
+  </Step>
+
+</Steps>

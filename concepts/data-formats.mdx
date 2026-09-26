@@ -1,0 +1,105 @@
+---
+title: 'Pinnacle API data formats, headers, and conventions'
+sidebarTitle: 'Data Formats'
+description: 'Learn how the Pinnacle API handles JSON, ISO 8601 timestamps, HTTP compression, currency rounding, and TLS requirements for every request.'
+---
+
+The Pinnacle API enforces a small set of formatting and transport conventions on every request. Knowing these rules upfront prevents the most common integration errors — wrong content types, missing headers, or unexpected currency values — before they happen in production.
+
+## JSON
+
+The API exclusively exchanges data as JSON. You must include the `Accept` header on every request, and every POST body must be valid JSON accompanied by the matching `Content-Type` header.
+
+<CodeGroup>
+```http GET request headers
+GET /v2/odds?sportId=29 HTTP/1.1
+Host: api.pinnacle.com
+Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1
+Accept: application/json
+User-Agent: MyBettingApp/1.0
+```
+
+```http POST request headers
+POST /v4/bets/straight HTTP/1.1
+Host: api.pinnacle.com
+Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1
+Accept: application/json
+Content-Type: application/json
+User-Agent: MyBettingApp/1.0
+
+{
+  "oddsFormat": "American",
+  "uniqueRequestId": "b7d3f21a-0c4e-4b8a-9f1e-2a3c5d6e7f8b",
+  "acceptBetterLine": true,
+  "stake": 100,
+  "winRiskStake": "Risk",
+  "lineId": 527557614,
+  "sportId": 29,
+  "eventId": 837721686,
+  "periodNumber": 0,
+  "betType": "MONEYLINE",
+  "team": "Team1"
+}
+```
+</CodeGroup>
+
+<Note>
+  If you omit `Accept: application/json`, the API may return an error or an unexpected content type. This header is **required** on every request, including GET requests.
+</Note>
+
+## Date and time format
+
+All timestamps across the API — event start times, cutoff dates, settlement times — are expressed in **GMT (UTC)** using **ISO 8601** format.
+
+```
+2025-10-14T18:00:00Z
+```
+
+When you filter or compare times in your application, always parse the trailing `Z` as UTC and convert to your local time zone only for display purposes. Never send local times to the API.
+
+## HTTP compression
+
+The API supports HTTP compression and Pinnacle strongly recommends enabling it. Compressed responses are significantly smaller, which reduces latency and bandwidth costs — especially for large odds snapshots covering many leagues.
+
+<Warning>
+  You **must** set the `User-Agent` header on every request, or HTTP compression may not be applied. An absent or empty `User-Agent` can silently disable compression.
+</Warning>
+
+Add both headers to enable compression:
+
+```http
+Accept-Encoding: gzip, deflate
+User-Agent: MyBettingApp/1.0
+```
+
+Most HTTP client libraries handle decompression automatically once you set `Accept-Encoding`.
+
+## Currency and max bet amounts
+
+Maximum bet limits returned by the API are denominated in your account currency. Exchange rates are sourced from [oanda.com](https://www.oanda.com) and updated every 24 hours.
+
+For non-USD currencies, the API always **rounds down** to the largest integer less than or equal to the converted amount. For example, a maximum bet of £345.23 is communicated as £345. Build your bet-sizing logic around the rounded integer, not the raw converted figure.
+
+<Tip>
+  If you request odds in a specific currency using the `toCurrencyCode` query parameter, the `maxSpread`, `maxMoneyline`, `maxTotal`, and `maxTeamTotal` fields in the response will already reflect the rounded-down value in that currency — no additional conversion is required on your end.
+</Tip>
+
+## TLS versions
+
+For security compliance, the API only accepts connections over **TLS 1.2** (preferred) or **TLS 1.1**. Connections using TLS 1.0 or SSL 3.0 will be rejected.
+
+<Note>
+  Ensure your HTTP client or runtime is configured to negotiate TLS 1.2. Most modern languages default to TLS 1.2, but older environments (e.g., Java 7, .NET 4.0, Python 2.x) may need explicit configuration.
+</Note>
+
+## Required headers at a glance
+
+<Accordion title="Header reference">
+| Header | Required on | Value |
+|---|---|---|
+| `Authorization` | All requests | `Basic <base64(username:password)>` |
+| `Accept` | All requests | `application/json` |
+| `Content-Type` | POST requests | `application/json` |
+| `User-Agent` | All requests | Any non-empty string identifying your app |
+| `Accept-Encoding` | All requests (recommended) | `gzip, deflate` |
+</Accordion>

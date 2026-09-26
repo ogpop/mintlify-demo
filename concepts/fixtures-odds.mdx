@@ -1,0 +1,303 @@
+---
+title: 'Understanding fixtures, odds, and market structure'
+sidebarTitle: 'Fixtures & Odds'
+description: 'Explore how fixtures, events, leagues, periods, and odds markets relate to each other in the Pinnacle API, and how to read and act on every field.'
+---
+
+Before you can place a bet you need to understand how the Pinnacle API organises its data. Fixtures tell you what events exist and when they start; odds tell you what prices are currently available on those events. Both are structured in a hierarchy of sports → leagues → events → periods → markets, and knowing what each layer means is the key to building a reliable integration.
+
+## Fixtures and events
+
+The `/fixtures` endpoint returns all non-settled events currently offered for a sport. Each event belongs to exactly one league, and each league belongs to one sport.
+
+### Event fields
+
+<Accordion title="Full event field reference">
+<ResponseField name="id" type="integer" required>
+  Unique event identifier. Use this as `eventId` when calling `/odds`, `/line`, or place-bet endpoints.
+</ResponseField>
+
+<ResponseField name="starts" type="string (ISO 8601)">
+  Scheduled start time of the event in UTC. Example: `2025-10-14T18:00:00Z`.
+</ResponseField>
+
+<ResponseField name="home" type="string">
+  Home team name as displayed on the site.
+</ResponseField>
+
+<ResponseField name="away" type="string">
+  Away team name as displayed on the site.
+</ResponseField>
+
+<ResponseField name="liveStatus" type="integer">
+  Indicates whether live betting is available for this event.
+
+  - `0` — No live betting will be offered.
+  - `1` — This is a live betting event (the bet is placed live, in-play).
+  - `2` — Live betting will be offered on this match, but on a **different** event. This event is the pre-game counterpart.
+</ResponseField>
+
+<ResponseField name="status" type="string" deprecated>
+  High-level event status. Deprecated — use the period `status` field in `/odds` instead.
+
+  - `O` — Open (starting status).
+  - `H` — Lines temporarily unavailable.
+  - `I` — One or more lines have a red circle (reduced limits).
+</ResponseField>
+
+<ResponseField name="parlayRestriction" type="integer">
+  Controls whether the event can be included in a parlay.
+
+  - `0` — Allowed without restrictions.
+  - `1` — Not allowed in parlays.
+  - `2` — Allowed, but only one leg per event (events sharing a rotation number are treated as the same event).
+</ResponseField>
+
+<ResponseField name="resultingUnit" type="string">
+  Specifies what the event is resulted on, for example `Corners` or `Bookings`. Important for choosing the correct event when multiple exist for the same match.
+</ResponseField>
+
+<ResponseField name="parentId" type="integer">
+  Links a live event back to its pre-game parent. Live events (`liveStatus=1`) always have `parentId` set. Pre-game parent events never have `parentId`. Use this field instead of `rotNum` to group related events — `rotNum` will be decommissioned in a future version.
+</ResponseField>
+</Accordion>
+
+### Example fixture response
+
+```json
+{
+  "sportId": 29,
+  "last": 148671597,
+  "league": [
+    {
+      "id": 2331,
+      "name": "Norway - 1st Division",
+      "events": [
+        {
+          "id": 837721686,
+          "starts": "2025-10-14T17:00:00Z",
+          "home": "Viking FK",
+          "away": "Mjondalen",
+          "liveStatus": 1,
+          "status": "O",
+          "parlayRestriction": 2,
+          "resultingUnit": "Goals",
+          "parentId": 834342247
+        },
+        {
+          "id": 834342247,
+          "starts": "2025-10-14T17:00:00Z",
+          "home": "Viking FK",
+          "away": "Mjondalen",
+          "liveStatus": 2,
+          "status": "I",
+          "parlayRestriction": 2
+        }
+      ]
+    }
+  ]
+}
+```
+
+In this example, event `834342247` is the pre-game parent (`liveStatus=2`) and event `837721686` is its live counterpart (`liveStatus=1`, `parentId=834342247`).
+
+### Associating home/away with team1/team2
+
+The `/fixtures` and `/odds` responses refer to teams as `home` and `away`. When placing a bet, however, you must specify `team` as `Team1` or `Team2`. The mapping is **not always** home=Team1. Check the `homeTeamType` field in the `/leagues` response:
+
+- If `homeTeamType` is `"Team1"`, then `home` = Team1 and `away` = Team2.
+- If `homeTeamType` is `"Team2"`, then `home` = Team2 and `away` = Team1.
+
+<Warning>
+  Always retrieve `homeTeamType` from `/leagues` before mapping teams to a bet. Using the wrong team identifier will place your bet on the wrong side.
+</Warning>
+
+## Odds structure
+
+The `/v2/odds` endpoint mirrors the fixture hierarchy: sport → league → event → periods. Each period represents a different portion of the match and contains all currently offered markets.
+
+### Period numbers
+
+| Number | Meaning |
+|---|---|
+| `0` | Full match / full game |
+| `1` | First half or first set |
+| `3` | Extra time |
+| `6` | Penalty shootout |
+
+<Note>
+  Period numbers beyond these vary by sport. Call the `/v1/periods` endpoint with a specific `sportId` to retrieve the authoritative list of periods available for that sport.
+</Note>
+
+### When is a market open for betting?
+
+All three conditions must be true simultaneously for a market to be available:
+
+1. The period's `status` field equals `1` (online).
+2. The market is priced (the market object is present in the response — an absent object means not offered).
+3. The period's `cutoff` date-time is in the future.
+
+### Odds period fields
+
+<Accordion title="Full period and market field reference">
+<ResponseField name="lineId" type="integer" required>
+  Identifies this pricing line. Pass `lineId` to `/line` and to the place-bet endpoint.
+</ResponseField>
+
+<ResponseField name="number" type="integer">
+  Period number (see table above).
+</ResponseField>
+
+<ResponseField name="cutoff" type="string (ISO 8601)">
+  UTC deadline after which betting on this period closes.
+</ResponseField>
+
+<ResponseField name="status" type="integer">
+  `1` = online (open for betting). `2` = offline (temporarily closed).
+</ResponseField>
+
+<ResponseField name="maxSpread" type="number">
+  Maximum bet volume for spread markets. Use the max-risk formula to derive the actual stake limit.
+</ResponseField>
+
+<ResponseField name="maxMoneyline" type="number">
+  Maximum bet volume for moneyline markets.
+</ResponseField>
+
+<ResponseField name="maxTotal" type="number">
+  Maximum bet volume for totals (over/under) markets.
+</ResponseField>
+
+<ResponseField name="maxTeamTotal" type="number">
+  Maximum bet volume for team-total markets.
+</ResponseField>
+
+<ResponseField name="spreads" type="array">
+  Array of spread (handicap) lines. Each entry has `hdp` (home handicap), `home` price, `away` price, and optionally `altLineId`.
+</ResponseField>
+
+<ResponseField name="moneyline" type="object">
+  Moneyline prices: `home`, `away`, and optionally `draw`. Absent when not offered.
+</ResponseField>
+
+<ResponseField name="totals" type="array">
+  Array of total-points lines. Each entry has `points`, `over`, `under`, and optionally `altLineId`.
+</ResponseField>
+
+<ResponseField name="teamTotal" type="object">
+  Contains `home` and `away` arrays, each holding team-total lines with `points`, `over`, `under`, and optionally `altLineId`.
+</ResponseField>
+</Accordion>
+
+### Example odds period
+
+```json
+{
+  "sportId": 29,
+  "last": 3301748841,
+  "leagues": [
+    {
+      "id": 2331,
+      "events": [
+        {
+          "id": 837721686,
+          "periods": [
+            {
+              "lineId": 527557614,
+              "number": 0,
+              "cutoff": "2025-10-14T18:00:00Z",
+              "status": 1,
+              "maxSpread": 500,
+              "maxMoneyline": 500,
+              "maxTotal": 500,
+              "maxTeamTotal": 250,
+              "spreads": [
+                { "hdp": -0.25, "home": -108, "away": -112 },
+                { "altLineId": 88821001, "hdp": 0, "home": -115, "away": -105, "max": 300 }
+              ],
+              "moneyline": {
+                "home": 1.95,
+                "away": 1.95,
+                "draw": 3.50
+              },
+              "totals": [
+                { "points": 2.5, "over": -115, "under": -105 },
+                { "altLineId": 88821002, "points": 3.0, "over": -120, "under": 100, "max": 200 }
+              ],
+              "teamTotal": {
+                "home": [{ "points": 1.5, "over": -130, "under": 110 }],
+                "away": [{ "points": 1.5, "over": -110, "under": -110 }]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Alternate lines and altLineId
+
+When a spread or total entry has an `altLineId` field, it is an **alternate line** (not the main line). When placing a bet on an alternate line, you must pass **both** `lineId` (from the period) and `altLineId` (from the specific spread or total entry) in your bet request. Omitting `altLineId` when it is present will place the bet on the main line at a different handicap or total — not the one you selected.
+
+### Calculating max risk from max volume
+
+The `maxSpread`, `maxMoneyline`, `maxTotal`, and `maxTeamTotal` fields represent **volume** limits. To find the maximum amount you can **risk** (stake), apply the following formula using decimal odds format:
+
+```
+if price > 2:
+    maxRisk = maxVolume
+else:
+    maxRisk = maxVolume / (price - 1)
+```
+
+**Example:** `maxMoneyline` is 250 and the home price is 1.819 (less than 2):
+
+```
+maxRisk = 250 / (1.819 - 1) = 250 / 0.819 ≈ 305
+```
+
+The away price is 2.03 (greater than 2):
+
+```
+maxRisk = 250
+```
+
+## Specials — props and futures
+
+Props and futures markets are not returned by `/fixtures` or `/v2/odds`. You must call `/fixtures/special` and `/odds/special` to retrieve them. Each special includes an `event` object that links back to the associated event in the main fixtures feed.
+
+```json
+{
+  "id": 1065232780,
+  "event": {
+    "id": 1051780418,
+    "periodNumber": 1,
+    "home": "Malta",
+    "away": "Norway"
+  }
+}
+```
+
+## Finding deleted events
+
+When an event is deleted from the system, it disappears from `/fixtures`. To detect deletions, poll `/fixtures/settled` and look for events where period `number=0` has `status=5`:
+
+```json
+{
+  "id": 933912855,
+  "periods": [
+    {
+      "number": 0,
+      "status": 5,
+      "settlementId": 3637379,
+      "settledAt": "2025-12-24T02:12:06Z",
+      "team1Score": 0,
+      "team2Score": 0
+    }
+  ]
+}
+```
+
+A `status` of `5` on period `0` is the authoritative signal that the event was deleted, not settled. Remove it from your local state accordingly.

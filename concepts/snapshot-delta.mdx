@@ -1,0 +1,235 @@
+---
+title: 'Snapshot and delta polling for real-time odds updates'
+sidebarTitle: 'Snapshot & Delta'
+description: 'Use the snapshot-then-delta pattern to keep fixtures and odds current with minimal bandwidth, smaller payloads, and faster response times.'
+---
+
+Fetching the entire odds feed on every poll is slow and wasteful. The Pinnacle API provides a snapshot-and-delta pattern that lets you load the full current state once, then receive only the changes on every subsequent call. This approach dramatically reduces response sizes and keeps your data fresh with the lowest possible latency.
+
+## How snapshot and delta calls work
+
+Every supported endpoint (`/fixtures`, `/fixtures/special`, `/v2/odds`, `/odds/special`) returns a `last` field in its response. This numeric cursor represents the point in time of that response.
+
+- **Snapshot call** — omit the `since` parameter. The API returns the complete current state for all requested events and leagues. Snapshot responses for `/odds` and `/fixtures` are cached for **60 seconds**.
+- **Delta call** — pass `since` equal to the `last` value from the previous response. The API returns only the periods and events that changed since that cursor.
+
+<Warning>
+  Never set `since` to `0` or `1`. These are not valid cursor values. The `since` parameter must always be the exact `last` value returned by a previous API response.
+</Warning>
+
+## Always start with a snapshot
+
+The only correct order is: **snapshot first, then delta**. If you begin with a delta call, you have no baseline state to apply changes against and will miss all events that have not changed since an arbitrary point.
+
+<Steps>
+  <Step title="Issue a snapshot call">
+    Call the endpoint **without** a `since` parameter. Store the entire response as your baseline state, and save the `last` value.
+  </Step>
+  <Step title="Process the snapshot response">
+    Build your in-memory representation of all fixtures or odds from the snapshot. Every event and period in the response is currently active.
+  </Step>
+  <Step title="Issue a delta call">
+    Call the same endpoint again with `since` set to the `last` value from the snapshot. Save the new `last` value from this response.
+  </Step>
+  <Step title="Merge changes into your state">
+    Apply the delta response on top of your existing state. Periods absent from the delta response are **unchanged** — do not remove them.
+  </Step>
+  <Step title="Repeat from step 3">
+    Continue polling with `since` = the most recent `last` value you received.
+  </Step>
+</Steps>
+
+## Understanding delta responses
+
+Delta responses contain **only changed periods**, but each changed period includes **all markets currently offered on that period** — not just the markets that changed. This means a delta response can tell you both what changed and what is no longer offered.
+
+Consider this example:
+
+<Tabs>
+  <Tab title="Snapshot response">
+```json
+{
+  "sportId": 29,
+  "last": 3301748841,
+  "leagues": [
+    {
+      "id": 2331,
+      "events": [
+        {
+          "id": 837721686,
+          "periods": [
+            {
+              "lineId": 527557600,
+              "number": 0,
+              "cutoff": "2025-10-14T18:00:00Z",
+              "status": 1,
+              "maxMoneyline": 500,
+              "moneyline": { "home": 1.95, "away": 1.95 },
+              "spreads": [{ "hdp": 0, "home": -110, "away": -110 }],
+              "totals": [{ "points": 2.5, "over": -115, "under": -105 }]
+            },
+            {
+              "lineId": 527557601,
+              "number": 1,
+              "cutoff": "2025-10-14T18:00:00Z",
+              "status": 1,
+              "maxMoneyline": 250,
+              "moneyline": { "home": 2.10, "away": 1.80 },
+              "spreads": [{ "hdp": 0.25, "home": -108, "away": -112 }]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+  </Tab>
+  <Tab title="Delta response">
+```json
+{
+  "sportId": 29,
+  "last": 3301751200,
+  "leagues": [
+    {
+      "id": 2331,
+      "events": [
+        {
+          "id": 837721686,
+          "periods": [
+            {
+              "lineId": 527557601,
+              "number": 1,
+              "cutoff": "2025-10-14T18:00:00Z",
+              "status": 1,
+              "maxMoneyline": 250,
+              "moneyline": { "home": 2.20, "away": 1.75 },
+              "totals": [{ "points": 2.5, "over": -118, "under": -102 }]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+  </Tab>
+</Tabs>
+
+Reading the delta response above:
+
+- **Period 0 is absent** — it had no changes; your local state for period 0 is still valid.
+- **Period 1 is present with `moneyline` and `totals`** — the moneyline prices changed and totals are now offered. Crucially, `spreads` is missing from period 1 in the delta, which means spreads are **no longer offered** for period 1.
+
+<Note>
+  A market type being absent from a delta period does not mean it was unchanged — it means it is currently **not offered**. Always replace your stored period data with the full period object from the delta.
+</Note>
+
+## Supported endpoints
+
+<CardGroup cols={2}>
+  <Card title="/fixtures" icon="calendar">
+    Straight-bet event fixtures. Supports snapshot and delta via the `since` parameter.
+  </Card>
+  <Card title="/fixtures/special" icon="star">
+    Props and futures (specials) fixtures. Supports snapshot and delta.
+  </Card>
+  <Card title="/v2/odds" icon="chart-line">
+    Current odds for straight bets. Snapshot responses are cached 60 seconds.
+  </Card>
+  <Card title="/odds/special" icon="ticket">
+    Odds for specials markets. Supports snapshot and delta.
+  </Card>
+</CardGroup>
+
+## Code example
+
+<CodeGroup>
+```python Python
+import requests
+import time
+
+BASE_URL = "https://api.pinnacle.com"
+AUTH = ("your_username", "your_password")
+HEADERS = {
+    "Accept": "application/json",
+    "User-Agent": "MyBettingApp/1.0",
+    "Accept-Encoding": "gzip, deflate"
+}
+SPORT_ID = 29
+LEAGUE_IDS = [2331, 4347, 889]
+
+# Step 1: Snapshot — no `since` parameter
+snapshot = requests.get(
+    f"{BASE_URL}/v2/odds",
+    params={"sportId": SPORT_ID, "leagueIds": LEAGUE_IDS},
+    auth=AUTH,
+    headers=HEADERS
+)
+data = snapshot.json()
+last = data["last"]
+# ... build your state from data ...
+
+# Step 2: Delta loop
+while True:
+    time.sleep(5)
+    delta = requests.get(
+        f"{BASE_URL}/v2/odds",
+        params={"sportId": SPORT_ID, "leagueIds": LEAGUE_IDS, "since": last},
+        auth=AUTH,
+        headers=HEADERS
+    )
+    delta_data = delta.json()
+    last = delta_data["last"]
+    # ... merge delta_data into your state ...
+```
+
+```javascript Node.js
+const axios = require('axios');
+
+const BASE_URL = 'https://api.pinnacle.com';
+const AUTH = { username: 'your_username', password: 'your_password' };
+const HEADERS = {
+  Accept: 'application/json',
+  'User-Agent': 'MyBettingApp/1.0',
+  'Accept-Encoding': 'gzip, deflate',
+};
+const SPORT_ID = 29;
+const LEAGUE_IDS = [2331, 4347, 889];
+
+async function poll() {
+  // Step 1: Snapshot — no `since` parameter
+  const snapshot = await axios.get(`${BASE_URL}/v2/odds`, {
+    params: { sportId: SPORT_ID, leagueIds: LEAGUE_IDS },
+    auth: AUTH,
+    headers: HEADERS,
+  });
+  let last = snapshot.data.last;
+  // ... build your state from snapshot.data ...
+
+  // Step 2: Delta loop
+  while (true) {
+    await new Promise(r => setTimeout(r, 5000));
+    const delta = await axios.get(`${BASE_URL}/v2/odds`, {
+      params: { sportId: SPORT_ID, leagueIds: LEAGUE_IDS, since: last },
+      auth: AUTH,
+      headers: HEADERS,
+    });
+    last = delta.data.last;
+    // ... merge delta.data into your state ...
+  }
+}
+
+poll();
+```
+</CodeGroup>
+
+## Performance tips
+
+<Tip>
+  Delta calls are **not cached**, so they return the latest data immediately. Snapshot calls are cached for 60 seconds — do not expect a fresh snapshot if you call within that window.
+</Tip>
+
+<Warning>
+  Never call `/odds` or `/fixtures` in a loop for each sport or league separately. Always include **all** league IDs you need in a single `leagueIds` array on one request. Looping per-league wastes quota and may trigger rate limiting.
+</Warning>

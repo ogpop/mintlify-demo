@@ -1,0 +1,352 @@
+---
+title: 'Get odds and pricing data — Pinnacle Lines API'
+sidebarTitle: 'Odds'
+description: 'Retrieve spreads, moneyline, totals, and alternate line prices for any sport via GET /v2/odds using snapshot and delta polling patterns.'
+---
+
+Pricing data is the heart of the Lines API. The `/v2/odds` endpoint returns all four market types — spread, moneyline, totals, and team totals — for every open period of every non-settled event. Like the fixtures endpoint, it supports both snapshot and delta modes: seed your data store with one snapshot call and then poll for incremental updates using the `last` cursor. Delta responses contain only changed periods, not the entire event tree, so your payloads stay small even during high-volume trading windows.
+
+<Note>
+  Odds endpoints are subject to a rate limit of **1 request per 2 minutes per endpoint per `sportId`**. Always use the `since` (delta) pattern to stay within this limit. Requests that exceed the rate limit receive a `429 Too Many Requests` response.
+</Note>
+
+---
+
+## GET /v2/odds
+
+Returns straight (single-event) odds for all non-settled events in a sport. A period is only included in a delta response when at least one of its markets changed since the `since` cursor — and when it does appear, it carries **all** currently offered markets, not just the changed one.
+
+### Query parameters
+
+<ParamField query="sportId" type="integer" required>
+  Sport to retrieve odds for. Obtain valid IDs from `/v2/sports`.
+</ParamField>
+
+<ParamField query="leagueIds" type="array of integers" optional>
+  Comma-separated league IDs to narrow the response. Pass multiple values as repeated parameters: `leagueIds=2627&leagueIds=218153`. Include all leagues of interest in a single call rather than making separate per-league requests.
+</ParamField>
+
+<ParamField query="oddsFormat" type="string" optional>
+  Format for returned prices. One of `AMERICAN` (default), `DECIMAL`, `HONGKONG`, `INDONESIAN`, or `MALAY`.
+</ParamField>
+
+<ParamField query="since" type="integer" optional>
+  Delta cursor. Set to the `last` value from a previous `/v2/odds` response to receive only periods that changed after that point. **Do not** pass `0` or `1`. Omit for a full snapshot. Snapshot responses are cached for up to 60 seconds; delta responses are not cached.
+</ParamField>
+
+<ParamField query="isLive" type="boolean" optional>
+  Set to `1` to return only live-event odds. Omit to receive both pre-game and live odds.
+</ParamField>
+
+<ParamField query="eventIds" type="array of integers" optional>
+  Comma-separated event IDs to scope the response to specific events.
+</ParamField>
+
+<ParamField query="toCurrencyCode" type="string" optional>
+  Three-letter currency code (e.g. `"GBP"`) from `/v2/currencies`. When provided, all bet limits in the response are converted to that currency. Defaults to USD.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="sportId" type="integer">
+  Echo of the requested sport ID.
+</ResponseField>
+
+<ResponseField name="last" type="integer">
+  Delta cursor for this response. Pass as `since` in your next call.
+</ResponseField>
+
+<ResponseField name="leagues" type="array">
+  <Expandable title="League object">
+    <ResponseField name="id" type="integer">League ID.</ResponseField>
+    <ResponseField name="events" type="array">
+      <Expandable title="Event object">
+        <ResponseField name="id" type="integer">Event ID matching `/v1/fixtures`.</ResponseField>
+        <ResponseField name="awayScore" type="number">Away team score. Live soccer only, period 0.</ResponseField>
+        <ResponseField name="homeScore" type="number">Home team score. Live soccer only, period 0.</ResponseField>
+        <ResponseField name="awayRedCards" type="integer">Away red cards. Live soccer only, period 0.</ResponseField>
+        <ResponseField name="homeRedCards" type="integer">Home red cards. Live soccer only, period 0.</ResponseField>
+        <ResponseField name="periods" type="array">
+          <Expandable title="Period object">
+            <ResponseField name="lineId" type="integer">
+              Line identifier. Required when placing a bet — always send the `lineId` from the most recent odds response.
+            </ResponseField>
+            <ResponseField name="number" type="integer">
+              Period number. `0` = full game, `1` = first half/set, `2` = second half, `3` = extra time, `6` = penalty shootout.
+            </ResponseField>
+            <ResponseField name="cutoff" type="string (ISO 8601)">
+              Wagering cutoff time in UTC. Bets are rejected after this time.
+            </ResponseField>
+            <ResponseField name="status" type="integer">
+              `1` = online (open for betting), `2` = offline (temporarily unavailable).
+            </ResponseField>
+            <ResponseField name="maxSpread" type="number">
+              Maximum bet volume for spread markets. See [max risk calculation](#max-risk-calculation) below.
+            </ResponseField>
+            <ResponseField name="maxMoneyline" type="number">
+              Maximum bet volume for moneyline markets.
+            </ResponseField>
+            <ResponseField name="maxTotal" type="number">
+              Maximum bet volume for totals markets.
+            </ResponseField>
+            <ResponseField name="maxTeamTotal" type="number">
+              Maximum bet volume for team-total markets.
+            </ResponseField>
+            <ResponseField name="spreadUpdatedAt" type="string (ISO 8601)">Last spread price update timestamp.</ResponseField>
+            <ResponseField name="moneylineUpdatedAt" type="string (ISO 8601)">Last moneyline price update timestamp.</ResponseField>
+            <ResponseField name="totalUpdatedAt" type="string (ISO 8601)">Last total price update timestamp.</ResponseField>
+            <ResponseField name="teamTotalUpdatedAt" type="string (ISO 8601)">Last team-total price update timestamp.</ResponseField>
+            <ResponseField name="spreads" type="array">
+              Spread (handicap) lines for this period.
+              <Expandable title="Spread object">
+                <ResponseField name="hdp" type="number">Home team handicap. A positive value favours the home team.</ResponseField>
+                <ResponseField name="home" type="number">Price for betting on the home team with this handicap.</ResponseField>
+                <ResponseField name="away" type="number">Price for betting on the away team with this handicap.</ResponseField>
+                <ResponseField name="altLineId" type="integer">Present only on alternate (non-primary) spread lines. Pass alongside `lineId` when placing a bet on this alternate line.</ResponseField>
+                <ResponseField name="max" type="number">Per-line volume override for alternate lines. When present, this value takes precedence over `maxSpread`.</ResponseField>
+              </Expandable>
+            </ResponseField>
+            <ResponseField name="moneyline" type="object">
+              Moneyline (win/lose/draw) prices.
+              <Expandable title="Moneyline object">
+                <ResponseField name="home" type="number">Home team price.</ResponseField>
+                <ResponseField name="away" type="number">Away team price.</ResponseField>
+                <ResponseField name="draw" type="number">Draw price. Present only for sports that offer a draw outcome.</ResponseField>
+              </Expandable>
+            </ResponseField>
+            <ResponseField name="totals" type="array">
+              Over/under total-points lines.
+              <Expandable title="Total object">
+                <ResponseField name="points" type="number">The total points line.</ResponseField>
+                <ResponseField name="over" type="number">Price for betting over.</ResponseField>
+                <ResponseField name="under" type="number">Price for betting under.</ResponseField>
+                <ResponseField name="altLineId" type="integer">Present only on alternate total lines.</ResponseField>
+                <ResponseField name="max" type="number">Per-line volume override for alternate lines.</ResponseField>
+              </Expandable>
+            </ResponseField>
+            <ResponseField name="teamTotal" type="object">
+              Individual team over/under totals.
+              <Expandable title="Team total object">
+                <ResponseField name="home" type="array">Array of over/under lines for the home team (`points`, `over`, `under`).</ResponseField>
+                <ResponseField name="away" type="array">Array of over/under lines for the away team (`points`, `over`, `under`).</ResponseField>
+              </Expandable>
+            </ResponseField>
+          </Expandable>
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example request
+
+<CodeGroup>
+```bash cURL (snapshot)
+curl -G https://api.pinnacle.com/v2/odds \
+  -H "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  -H "Accept: application/json" \
+  --data-urlencode "sportId=29" \
+  --data-urlencode "oddsFormat=AMERICAN"
+```
+
+```bash cURL (delta)
+curl -G https://api.pinnacle.com/v2/odds \
+  -H "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  -H "Accept: application/json" \
+  --data-urlencode "sportId=29" \
+  --data-urlencode "oddsFormat=AMERICAN" \
+  --data-urlencode "since=3301748841"
+```
+</CodeGroup>
+
+### Example response — full period with all market types
+
+```json
+{
+  "sportId": 29,
+  "last": 3301751200,
+  "leagues": [
+    {
+      "id": 2627,
+      "events": [
+        {
+          "id": 1563271334,
+          "awayScore": null,
+          "homeScore": null,
+          "periods": [
+            {
+              "lineId": 527557614,
+              "number": 0,
+              "cutoff": "2024-08-17T11:30:00Z",
+              "status": 1,
+              "maxSpread": 500,
+              "maxMoneyline": 2000,
+              "maxTotal": 500,
+              "maxTeamTotal": 250,
+              "spreadUpdatedAt": "2024-08-17T09:12:00Z",
+              "moneylineUpdatedAt": "2024-08-17T09:15:00Z",
+              "totalUpdatedAt": "2024-08-17T09:10:00Z",
+              "teamTotalUpdatedAt": "2024-08-17T09:10:00Z",
+              "spreads": [
+                {
+                  "hdp": -0.5,
+                  "home": -118,
+                  "away": 100
+                },
+                {
+                  "altLineId": 88234561,
+                  "hdp": -1.0,
+                  "home": 115,
+                  "away": -138,
+                  "max": 300
+                }
+              ],
+              "moneyline": {
+                "home": 148,
+                "away": 172,
+                "draw": 230
+              },
+              "totals": [
+                {
+                  "points": 2.5,
+                  "over": -122,
+                  "under": 102
+                },
+                {
+                  "altLineId": 88234562,
+                  "points": 3.0,
+                  "over": 110,
+                  "under": -132,
+                  "max": 300
+                }
+              ],
+              "teamTotal": {
+                "home": [
+                  { "points": 1.5, "over": -105, "under": -115 }
+                ],
+                "away": [
+                  { "points": 1.5, "over": -110, "under": -110 }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Max risk calculation
+
+The `maxSpread`, `maxMoneyline`, `maxTotal`, and `maxTeamTotal` fields represent **volume** limits, not risk limits. Convert them to a max risk amount using the decimal price:
+
+```
+if price > 2.0:
+    maxRisk = maxVolume
+
+if price < 2.0:
+    maxRisk = maxVolume / (price - 1)
+```
+
+**Example:** `maxMoneyline = 250`, home price = `1.819` (decimal) → `maxRisk = 250 / (1.819 - 1) = 305`.
+
+### Alternate lines
+
+When `altLineId` appears on a spread or total entry, that line is an alternate (non-primary) line. To place a bet on an alternate line, you must supply **both** `lineId` (the period's main line ID) **and** `altLineId` when calling `/v1/line` and the place-bet endpoint. Alternate lines may carry their own `max` volume override that supersedes the period-level limit.
+
+<Tip>
+  When a market disappears from a delta response, it means that market is no longer offered for that period — not that it simply didn't change. If `moneyline` is absent in a delta update for a period, remove it from your local copy.
+</Tip>
+
+---
+
+## GET /v1/odds/special
+
+Returns odds for non-settled specials (props and futures). Supports snapshot and delta via the `since` parameter. Each special's contestant has its own `lineId`, `price`, and `max` limit (per-contestant limits are available from April 2024).
+
+### Query parameters
+
+<ParamField query="sportId" type="integer" required>Sport ID.</ParamField>
+<ParamField query="leagueIds" type="array of integers" optional>Filter by league.</ParamField>
+<ParamField query="since" type="integer" optional>Delta cursor from a previous response.</ParamField>
+<ParamField query="oddsFormat" type="string" optional>Price format: `AMERICAN`, `DECIMAL`, `HONGKONG`, `INDONESIAN`, or `MALAY`.</ParamField>
+<ParamField query="specialId" type="integer" optional>Retrieve a single special by its ID.</ParamField>
+
+### Example response
+
+```json
+{
+  "sportId": 4,
+  "last": 636433059510590700,
+  "leagues": [
+    {
+      "id": 487,
+      "specials": [
+        {
+          "id": 9,
+          "maxBet": 100,
+          "contestantLines": [
+            { "id": 17, "lineId": 1017, "price": -183, "max": 450, "handicap": null },
+            { "id": 18, "lineId": 1018, "price": -182, "max": 450, "handicap": null },
+            { "id": 19, "lineId": 1019, "price": -181, "max": 450, "handicap": null },
+            { "id": 20, "lineId": 1020, "price": -180, "max": 450, "handicap": null }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## GET /v1/odds/teaser
+
+Returns spread and total-points odds for a specific teaser. Teaser odds include the adjusted handicap points for each event and leg.
+
+### Query parameters
+
+<ParamField query="teaserId" type="integer" required>
+  Teaser group identifier. Retrieve valid IDs from `/v1/teaser/groups`.
+</ParamField>
+
+### Response highlights
+
+Each period in the response includes a `spread` object with `homeHdp`, `awayHdp`, and an `altHdp` flag. When `altHdp` is `true`, the event is offered with alternative teaser points that may differ from the teaser group's standard point adjustment.
+
+---
+
+## GET /v1/teaser/groups
+
+Returns all available teaser configurations, including the point spreads offered, the minimum and maximum number of legs, and the payout combinations for each option.
+
+### Query parameters
+
+<ParamField query="oddsFormat" type="string" required>
+  Format for returned odds: `AMERICAN`, `DECIMAL`, `HONGKONG`, `INDONESIAN`, or `MALAY`.
+</ParamField>
+
+### Example response
+
+```json
+{
+  "teaserGroups": [
+    {
+      "id": 101,
+      "sport": "Football",
+      "name": "NFL Teaser 6pt",
+      "description": "6 point NFL teaser",
+      "minLegs": 2,
+      "maxLegs": 8,
+      "payoutCombinations": [
+        { "numberOfLegs": 2, "price": -110 },
+        { "numberOfLegs": 3, "price": 160 }
+      ],
+      "leagues": [
+        { "id": 889, "name": "NFL" }
+      ]
+    }
+  ]
+}
+```

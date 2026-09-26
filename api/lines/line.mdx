@@ -1,0 +1,431 @@
+---
+title: 'Check a line before placing — Pinnacle Lines API'
+sidebarTitle: 'Line Check'
+description: 'Validate the exact current price and stake limits for any selection before submitting a bet using GET /v1/line and related endpoints.'
+---
+
+Before you submit a place-bet request, use the line-check endpoints to confirm the current price and the exact stake limits for your selection. This is especially important for live events, where prices and period status can change in seconds. The `/v1/line` endpoint returns the `lineId` you must include in your bet request, as well as precise `minRiskStake`, `maxRiskStake`, `minWinStake`, and `maxWinStake` values scoped to your account and the current market state.
+
+<Warning>
+  Do **not** call `/v1/line` in a polling loop. This endpoint is intended solely as a pre-bet confirmation check — once per selection, immediately before placing the bet. Automated repeated calls will be rate-limited and may result in account restrictions.
+</Warning>
+
+---
+
+## GET /v1/line
+
+Returns the current price and stake limits for a single straight-bet selection.
+
+### Query parameters
+
+<ParamField query="sportId" type="integer" required>
+  Sport ID. Obtain from `/v2/sports`.
+</ParamField>
+
+<ParamField query="leagueId" type="integer" required>
+  League ID. Obtain from `/v2/leagues`.
+</ParamField>
+
+<ParamField query="eventId" type="integer" required>
+  Event ID. Obtain from `/v1/fixtures`.
+</ParamField>
+
+<ParamField query="periodNumber" type="integer" required>
+  Period to bet on. Obtain valid values from `/v1/periods`. Common values: `0` = full game, `1` = first half.
+</ParamField>
+
+<ParamField query="betType" type="string" required>
+  Market type. One of: `SPREAD`, `MONEYLINE`, `TOTAL_POINTS`, `TEAM_TOTAL_POINTS`.
+</ParamField>
+
+<ParamField query="team" type="string">
+  Required for `SPREAD`, `MONEYLINE`, and `TEAM_TOTAL_POINTS`. One of: `Team1`, `Team2`, `Draw` (MONEYLINE only). Map home/away to Team1/Team2 using `homeTeamType` from `/v2/leagues`.
+</ParamField>
+
+<ParamField query="side" type="string">
+  Required for `TOTAL_POINTS` and `TEAM_TOTAL_POINTS`. One of: `OVER`, `UNDER`.
+</ParamField>
+
+<ParamField query="handicap" type="number">
+  Required for `SPREAD`, `TOTAL_POINTS`, and `TEAM_TOTAL_POINTS`. Must exactly match the `hdp` or `points` value from `/v2/odds` — including the correct decimal precision. A mismatch returns `NOT_EXISTS`.
+</ParamField>
+
+<ParamField query="oddsFormat" type="string" optional>
+  Format for the returned price: `AMERICAN` (default), `DECIMAL`, `HONGKONG`, `INDONESIAN`, or `MALAY`.
+</ParamField>
+
+<ParamField query="altLineId" type="integer" optional>
+  Pass the `altLineId` from `/v2/odds` when you want to bet an alternate spread or total line. Required in addition to the normal parameters when targeting an alternate line.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="status" type="string">
+  Result of the line check. When the value is anything other than `SUCCESS`, no other fields are populated.
+
+  | Value | Meaning |
+  |-------|---------|
+  | `SUCCESS` | Line is valid; price and limits are in the response. |
+  | `NOT_EXISTS` | The line does not exist with the parameters you sent. See common causes below. |
+  | `OFFLINE` | The period is temporarily unavailable (`status=2`). |
+  | `VALID_FOR_PARLAY_ONLY` | The selection can only be used as part of a parlay. |
+  | `RESPONSIBLE_GAMBLING_ONLY` | The line is restricted to responsible-gambling limits for your account. |
+</ResponseField>
+
+<ResponseField name="price" type="number">
+  Current price in the requested odds format.
+</ResponseField>
+
+<ResponseField name="lineId" type="integer">
+  Line identifier. You **must** pass this value in your place-bet request — do not reuse a `lineId` from a previous `/v2/odds` response, as lines roll over.
+</ResponseField>
+
+<ResponseField name="altLineId" type="integer">
+  Present when the bet is on an alternate line. Pass this alongside `lineId` when placing the bet.
+</ResponseField>
+
+<ResponseField name="team1Score" type="integer">
+  Team 1 score for period 0. Soccer only.
+</ResponseField>
+
+<ResponseField name="team2Score" type="integer">
+  Team 2 score for period 0. Soccer only.
+</ResponseField>
+
+<ResponseField name="maxRiskStake" type="number">
+  Maximum amount you may risk on this selection right now, in USD (or your account currency).
+</ResponseField>
+
+<ResponseField name="minRiskStake" type="number">
+  Minimum amount you must risk to place a valid risk-type bet.
+</ResponseField>
+
+<ResponseField name="maxWinStake" type="number">
+  Maximum amount you may win on this selection.
+</ResponseField>
+
+<ResponseField name="minWinStake" type="number">
+  Minimum amount you must win to place a valid win-type bet.
+</ResponseField>
+
+<ResponseField name="effectiveAsOf" type="string (ISO 8601)">
+  UTC timestamp indicating when this line became effective. Compare to the `spreadUpdatedAt` / `moneylineUpdatedAt` timestamps in `/v2/odds` to detect a price move between your odds poll and your line check.
+</ResponseField>
+
+### Common causes of `NOT_EXISTS`
+
+1. **Wrong IDs** — `sportId`, `leagueId`, `eventId`, or `periodNumber` doesn't match the event. Note that the same physical match may be offered across multiple events, with different periods on different event IDs.
+2. **Cutoff in the past** — The period's wagering cutoff has passed.
+3. **No prices** — The selection has no prices at this moment (market is suspended or not yet priced).
+4. **Wrong `handicap`, `team`, or `side`** — The value doesn't exactly match what's offered in `/v2/odds`.
+5. **Period offline** — Period `status=2` in `/v2/odds`.
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -G https://api.pinnacle.com/v1/line \
+  -H "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  -H "Accept: application/json" \
+  --data-urlencode "sportId=29" \
+  --data-urlencode "leagueId=2627" \
+  --data-urlencode "eventId=1563271334" \
+  --data-urlencode "periodNumber=0" \
+  --data-urlencode "betType=SPREAD" \
+  --data-urlencode "team=Team1" \
+  --data-urlencode "handicap=-0.5" \
+  --data-urlencode "oddsFormat=AMERICAN"
+```
+</CodeGroup>
+
+### Example response
+
+```json
+{
+  "status": "SUCCESS",
+  "price": -118,
+  "lineId": 527557614,
+  "team1Score": 0,
+  "team2Score": 0,
+  "maxRiskStake": 500.00,
+  "minRiskStake": 1.00,
+  "maxWinStake": 423.73,
+  "minWinStake": 0.85,
+  "effectiveAsOf": "2024-08-17T09:12:00Z"
+}
+```
+
+<Tip>
+  For live events, prices change very frequently and you may receive `NOT_EXISTS` more often than you would for pre-game events. If you receive `NOT_EXISTS` immediately before placing, re-poll `/v2/odds?isLive=1` to get the latest prices and retry the line check with the updated values.
+</Tip>
+
+---
+
+## POST /v2/line/parlay
+
+Validates a set of parlay legs and returns the available round-robin options with combined odds. You must use this endpoint before calling `/v2/bets/parlay` to place the bet — it provides the `lineId` per leg and the round-robin configurations accepted by the bet placement endpoint.
+
+### Request body
+
+```json
+{
+  "oddsFormat": "AMERICAN",
+  "legs": [
+    {
+      "uniqueLegId": "leg-001",
+      "eventId": 1563271334,
+      "periodNumber": 0,
+      "legBetType": "SPREAD",
+      "team": "Team1",
+      "handicap": -0.5
+    },
+    {
+      "uniqueLegId": "leg-002",
+      "eventId": 1563271400,
+      "periodNumber": 0,
+      "legBetType": "MONEYLINE",
+      "team": "Team2"
+    }
+  ]
+}
+```
+
+### Request body fields
+
+<ParamField body="oddsFormat" type="string" optional>
+  Format for returned odds. One of: `AMERICAN`, `DECIMAL`, `HONGKONG`, `INDONESIAN`, `MALAY`.
+</ParamField>
+
+<ParamField body="legs" type="array" required>
+  Array of parlay leg objects.
+  <Expandable title="Leg object">
+    <ParamField body="uniqueLegId" type="string" required>Client-generated identifier for matching legs in the response.</ParamField>
+    <ParamField body="eventId" type="integer" required>Event ID from `/v1/fixtures`.</ParamField>
+    <ParamField body="periodNumber" type="integer" required>Period number.</ParamField>
+    <ParamField body="legBetType" type="string" required>`SPREAD`, `MONEYLINE`, `TOTAL_POINTS`, or `TEAM_TOTAL_POINTS`.</ParamField>
+    <ParamField body="team" type="string">Required for `SPREAD` and `MONEYLINE` legs: `Team1`, `Team2`, or `Draw`.</ParamField>
+    <ParamField body="side" type="string">Required for `TOTAL_POINTS` legs: `OVER` or `UNDER`.</ParamField>
+    <ParamField body="handicap" type="number">Required for `SPREAD` and `TOTAL_POINTS` legs.</ParamField>
+  </Expandable>
+</ParamField>
+
+### Response highlights
+
+<ResponseField name="status" type="string">
+  `VALID` when all legs are acceptable. `PROCESSED_WITH_ERROR` when one or more legs are invalid.
+</ResponseField>
+
+<ResponseField name="roundRobinOptionWithOdds" type="array">
+  Available round-robin options (e.g. `Parlay`, `TwoLegRoundRobin`, `ThreeLegRoundRobin`), each with combined `odds`, `unroundedDecimalOdds`, and `numberOfBets`.
+</ResponseField>
+
+<ResponseField name="maxRoundRobinTotalRisk" type="number">
+  Maximum combined risk stake across all bets in the round-robin. Use this with `numberOfBets` and `unroundedDecimalOdds` to calculate the maximum per-bet stake — see the [FAQ formula](https://github.com/pinnacleapi/pinnacleapi-documentation/blob/master/FAQ.md#how-to-calculate-round-robin-max-stake).
+</ResponseField>
+
+<ResponseField name="maxRoundRobinTotalWin" type="number">
+  Maximum combined win amount across all bets in the round-robin.
+</ResponseField>
+
+<ResponseField name="legs" type="array">
+  Per-leg results, each with `legId`, `status`, `lineId`, `price`, and an `errorCode` if invalid.
+</ResponseField>
+
+### Example response
+
+```json
+{
+  "status": "VALID",
+  "minRiskStake": 1.00,
+  "maxParlayRiskStake": 250.00,
+  "maxRoundRobinTotalRisk": 500.00,
+  "maxRoundRobinTotalWin": 1850.00,
+  "roundRobinOptionWithOdds": [
+    {
+      "roundRobinOption": "Parlay",
+      "odds": 264,
+      "unroundedDecimalOdds": 3.6418,
+      "numberOfBets": 1
+    },
+    {
+      "roundRobinOption": "TwoLegRoundRobin",
+      "odds": -110,
+      "unroundedDecimalOdds": 1.9091,
+      "numberOfBets": 2
+    }
+  ],
+  "legs": [
+    {
+      "legId": "leg-001",
+      "status": "VALID",
+      "lineId": 527557614,
+      "price": -118
+    },
+    {
+      "legId": "leg-002",
+      "status": "VALID",
+      "lineId": 527558200,
+      "price": 172
+    }
+  ]
+}
+```
+
+---
+
+## POST /v1/line/teaser
+
+Validates a teaser bet before submission and returns the combined price and adjusted handicap points for each leg.
+
+### Request body
+
+<ParamField body="teaserId" type="integer" required>
+  Teaser group identifier from `/v1/teaser/groups`.
+</ParamField>
+
+<ParamField body="oddsFormat" type="string" required>
+  Price format: `AMERICAN`, `DECIMAL`, `HONGKONG`, `INDONESIAN`, or `MALAY`.
+</ParamField>
+
+<ParamField body="legs" type="array" required>
+  Array of teaser leg objects. Each leg requires `legId` (client GUID), `eventId`, `periodNumber`, `betType` (`SPREAD` or `TOTAL_POINTS`), `team` or `side`, and `handicap`.
+</ParamField>
+
+### Response highlights
+
+<ResponseField name="status" type="string">
+  `VALID` or `PROCESSED_WITH_ERROR`. When invalid, `errorCode` explains the problem (e.g. `TOO_FEW_LEGS`, `TEASER_DISABLED`, `INVALID_LEGS`).
+</ResponseField>
+
+<ResponseField name="price" type="number">
+  Combined teaser price in the requested format.
+</ResponseField>
+
+<ResponseField name="minRiskStake / maxRiskStake" type="number">
+  Stake limits for risk-type bet placement.
+</ResponseField>
+
+<ResponseField name="legs" type="array">
+  Per-leg results with `lineId`, `status`, and `errorCode` if invalid.
+</ResponseField>
+
+---
+
+## GET /v1/line/special
+
+Validates a special (prop/futures) bet before submission and returns the current price and limits for the selected contestant.
+
+### Query parameters
+
+<ParamField query="specialId" type="integer" required>
+  Special ID from `/v1/fixtures/special`.
+</ParamField>
+
+<ParamField query="contestantId" type="integer" required>
+  Contestant ID from the special's `contestants` array.
+</ParamField>
+
+<ParamField query="oddsFormat" type="string" required>
+  Price format: `AMERICAN`, `DECIMAL`, `HONGKONG`, `INDONESIAN`, or `MALAY`.
+</ParamField>
+
+<ParamField query="handicap" type="integer" optional>
+  If you specify the contestant's handicap and it has since changed, the response returns `NOT_EXISTS` instead of `SUCCESS` with the new handicap. This makes line-checking for specials behave consistently with `/v1/line`.
+</ParamField>
+
+### Example response
+
+```json
+{
+  "status": "SUCCESS",
+  "price": -183,
+  "lineId": 1017,
+  "minRiskStake": 1.00,
+  "maxRiskStake": 450.00,
+  "minWinStake": 0.55,
+  "maxWinStake": 245.90,
+  "effectiveAsOf": "2024-08-17T10:00:00Z"
+}
+```
+
+---
+
+## GET /v1/inrunning
+
+Returns the current live state and elapsed time for all in-running (live) soccer events that are currently in progress. Use this to display a game clock or gate your bet logic based on game state.
+
+<Note>
+  This endpoint is marked **deprecated** in the OpenAPI specification. Verify availability with your Pinnacle account manager before building production workflows that depend on it.
+</Note>
+
+No query parameters are required.
+
+### Response fields
+
+<ResponseField name="sports" type="array">
+  <Expandable title="Sport object">
+    <ResponseField name="id" type="integer">Sport ID.</ResponseField>
+    <ResponseField name="leagues" type="array">
+      <Expandable title="League object">
+        <ResponseField name="id" type="integer">League ID.</ResponseField>
+        <ResponseField name="events" type="array">
+          <Expandable title="In-running event object">
+            <ResponseField name="id" type="integer">Event ID. Cross-reference with `/v1/fixtures` using `parentId`.</ResponseField>
+            <ResponseField name="state" type="integer">
+              Game state integer:
+              - `1` = First half in progress
+              - `2` = Half time
+              - `3` = Second half in progress
+              - `4` = End of regular time
+              - `5` = First half extra time
+              - `6` = Extra time half time
+              - `7` = Second half extra time
+              - `8` = End of extra time
+              - `9` = End of game
+              - `10` = Temporarily suspended
+              - `11` = Penalties in progress
+            </ResponseField>
+            <ResponseField name="elapsed" type="integer">
+              Minutes elapsed in the current period.
+            </ResponseField>
+          </Expandable>
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl https://api.pinnacle.com/v1/inrunning \
+  -H "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  -H "Accept: application/json"
+```
+</CodeGroup>
+
+### Example response
+
+```json
+{
+  "sports": [
+    {
+      "id": 29,
+      "leagues": [
+        {
+          "id": 218153,
+          "events": [
+            { "id": 1563271334, "state": 3, "elapsed": 23 },
+            { "id": 1563271400, "state": 1, "elapsed": 38 }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+<Tip>
+  Combine `/v1/inrunning` with `/v2/odds?isLive=1` for a complete live-betting workflow: use `state` and `elapsed` to display game context in your UI, and use the live odds response for current prices. Cross-reference event IDs using `parentId` from `/v1/fixtures` to link live events to their pre-game parents.
+</Tip>

@@ -1,0 +1,252 @@
+---
+title: 'Place parlay and round-robin bets via the API'
+sidebarTitle: 'Parlay Bets'
+description: 'Build multi-leg parlays and round-robins by combining Get Parlay Lines validation with the Place Parlay Bet endpoint for accurate odds and limits.'
+---
+
+Parlay bets combine two or more independent legs into a single wager: all legs must win for the bet to pay out. Round-robin parlays automatically generate every possible parlay combination from your selected legs. The Pinnacle API requires you to validate each leg through `POST /v2/line/parlay` before submitting the final bet, ensuring you always place with current line identifiers and that no invalid legs slip through.
+
+<Steps>
+
+  <Step title="Get Fixtures">
+
+    Call `GET /v1/fixtures` to retrieve all non-settled events for your target sport. Use the `since` parameter on subsequent calls to receive only changed events (delta mode). Snapshot calls (without `since`) are cached for 60 seconds; delta calls are not cached.
+
+    ```bash
+    curl -u username:password \
+      "https://api.pinnacle.com/v1/fixtures?sportId=29"
+    ```
+
+    Record the `id`, `home`, `away`, and `parlayRestriction` for each event you plan to include. Events with `parlayRestriction=1` cannot be parlayed; those with `parlayRestriction=2` allow parlaying but only one leg per event.
+
+  </Step>
+
+  <Step title="Get Odds">
+
+    Call `GET /v2/odds` to retrieve current prices. Use delta requests with `since` to track line movements between your initial fetch and when you submit the parlay.
+
+    ```bash
+    curl -u username:password \
+      "https://api.pinnacle.com/v2/odds?sportId=29&oddsFormat=American"
+    ```
+
+    For each leg you intend to include, note the `event.id`, `period.number`, `period.lineId`, bet type, team/side, and handicap. These values feed directly into the Get Parlay Lines request.
+
+  </Step>
+
+  <Step title="Get Parlay Lines">
+
+    Submit `POST /v2/line/parlay` with a list of `Leg` objects — one per selection. This call validates each leg, returns current `lineId` values, calculates combined odds for every available round-robin option, and provides stake limits.
+
+    ```bash
+    curl -u username:password \
+      -X POST "https://api.pinnacle.com/v2/line/parlay" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "oddsFormat": "American",
+        "legs": [
+          {
+            "uniqueLegId": "leg-001",
+            "eventId": 834342247,
+            "periodNumber": 0,
+            "legBetType": "MONEYLINE",
+            "team": "Team1"
+          },
+          {
+            "uniqueLegId": "leg-002",
+            "eventId": 837721686,
+            "periodNumber": 0,
+            "legBetType": "SPREAD",
+            "team": "Team2",
+            "handicap": 1.5
+          },
+          {
+            "uniqueLegId": "leg-003",
+            "eventId": 840000123,
+            "periodNumber": 0,
+            "legBetType": "TOTAL_POINTS",
+            "side": "OVER",
+            "handicap": 2.5
+          }
+        ]
+      }'
+    ```
+
+    **Handling the response:**
+
+    ```json
+    {
+      "status": "VALID",
+      "minRiskStake": 1.00,
+      "maxParlayRiskStake": 500.00,
+      "maxRoundRobinTotalRisk": 1500.00,
+      "maxRoundRobinTotalWin": 6000.00,
+      "roundRobinOptionWithOdds": [
+        {
+          "roundRobinOption": "Parlay",
+          "odds": 682,
+          "unroundedDecimalOdds": 7.8231,
+          "numberOfBets": 1
+        },
+        {
+          "roundRobinOption": "TwoLegRoundRobin",
+          "odds": 214,
+          "unroundedDecimalOdds": 3.1400,
+          "numberOfBets": 3
+        }
+      ],
+      "legs": [
+        {
+          "status": "VALID",
+          "errorCode": null,
+          "legId": "leg-001",
+          "lineId": 527557614,
+          "price": 200
+        },
+        {
+          "status": "VALID",
+          "errorCode": null,
+          "legId": "leg-002",
+          "lineId": 527557700,
+          "price": -115
+        },
+        {
+          "status": "VALID",
+          "errorCode": null,
+          "legId": "leg-003",
+          "lineId": 527557800,
+          "price": -110
+        }
+      ]
+    }
+    ```
+
+    **If the response contains invalid legs (`status: PROCESSED_WITH_ERROR`):**
+
+    1. Identify which legs have `status: PROCESSED_WITH_ERROR` in the `legs` array.
+    2. Remove those legs from your request.
+    3. Resubmit `POST /v2/line/parlay` with only the remaining valid legs.
+    4. Repeat until `status: VALID` is returned, or until too few legs remain for a parlay (minimum 2 legs).
+
+    <Note>
+      Only proceed to Place Parlay Bet once the Get Parlay Lines response returns `"status": "VALID"`. The `lineId` values in the legs response are what you use in the next step — do not use `lineId` values from a prior Get Odds call.
+    </Note>
+
+  </Step>
+
+  <Step title="Place Parlay Bet">
+
+    Submit `POST /v4/bets/parlay` using the `lineId` values returned by Get Parlay Lines. Choose your `roundRobinOptions` from the `roundRobinOptionWithOdds` array in the Parlay Lines response — only those options are valid for your current leg combination.
+
+    ```bash
+    curl -u username:password \
+      -X POST "https://api.pinnacle.com/v4/bets/parlay" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "uniqueRequestId": "a9eb2eb1-13a5-4600-9f1b-4859379cdec4",
+        "acceptBetterLine": true,
+        "oddsFormat": "AMERICAN",
+        "riskAmount": 10.00,
+        "roundRobinOptions": ["Parlay", "TwoLegRoundRobin"],
+        "legs": [
+          {
+            "uniqueLegId": "leg-001",
+            "lineId": 527557614,
+            "sportId": 29,
+            "eventId": 834342247,
+            "periodNumber": 0,
+            "legBetType": "MONEYLINE",
+            "team": "TEAM1"
+          },
+          {
+            "uniqueLegId": "leg-002",
+            "lineId": 527557700,
+            "sportId": 29,
+            "eventId": 837721686,
+            "periodNumber": 0,
+            "legBetType": "SPREAD",
+            "team": "TEAM2"
+          },
+          {
+            "uniqueLegId": "leg-003",
+            "lineId": 527557800,
+            "sportId": 29,
+            "eventId": 840000123,
+            "periodNumber": 0,
+            "legBetType": "TOTAL_POINTS",
+            "side": "OVER"
+          }
+        ]
+      }'
+    ```
+
+    <Note>
+      The `riskAmount` applies per parlay. If you select multiple round-robin options, the total amount wagered equals `riskAmount × number of individual parlays` generated by those options. For example, a `TwoLegRoundRobin` across 3 legs generates 3 separate two-leg parlays.
+    </Note>
+
+    **Successful response:**
+
+    ```json
+    {
+      "status": "ACCEPTED",
+      "betId": 1525403345,
+      "uniqueRequestId": "a9eb2eb1-13a5-4600-9f1b-4859379cdec4",
+      "roundRobinOptionWithOdds": [
+        {
+          "roundRobinOption": "Parlay",
+          "odds": 682,
+          "unroundedDecimalOdds": 7.8231
+        },
+        {
+          "roundRobinOption": "TwoLegRoundRobin",
+          "odds": 214,
+          "unroundedDecimalOdds": 3.1400
+        }
+      ],
+      "maxRiskStake": 500.00,
+      "minRiskStake": 1.00,
+      "validLegs": [
+        { "status": "VALID", "legId": "leg-001", "lineId": 527557614, "price": 200 },
+        { "status": "VALID", "legId": "leg-002", "lineId": 527557700, "price": -115 },
+        { "status": "VALID", "legId": "leg-003", "lineId": 527557800, "price": -110 }
+      ]
+    }
+    ```
+
+    **Calculating the maximum round-robin risk stake**
+
+    The `maxParlayRiskStake` field covers a single parlay. For round-robin options, calculate the per-parlay stake ceiling using the following four-step formula (values come from the Get Parlay Lines response):
+
+    ```
+    1. maxRiskStakeBasedOnMaxTotalRisk =
+         maxRoundRobinTotalRisk / SUM(numberOfBets)
+         where SUM is across all selected round-robin options
+
+    2. maxRiskStakeBasedOnMaxTotalWin =
+         maxRoundRobinTotalWin / SUM(unroundedDecimalOdds - 1)
+         where SUM is across all selected round-robin options
+
+    3. maxRoundRobinRiskStake =
+         Min(maxRiskStakeBasedOnMaxTotalRisk, maxRiskStakeBasedOnMaxTotalWin)
+
+    4. Round maxRoundRobinRiskStake to 2 decimal places, away from zero.
+    ```
+
+    **Example:** You select `Parlay` (1 bet, `unroundedDecimalOdds` = 7.8231) and `TwoLegRoundRobin` (3 bets, `unroundedDecimalOdds` = 3.1400). `maxRoundRobinTotalRisk` = 1500, `maxRoundRobinTotalWin` = 6000.
+
+    ```
+    Step 1: 1500 / (1 + 3) = 375.00
+    Step 2: 6000 / ((7.8231 - 1) + (3.1400 - 1) * 3) = 6000 / (6.8231 + 6.4200) = 6000 / 13.2431 ≈ 453.05
+    Step 3: Min(375.00, 453.05) = 375.00
+    Step 4: 375.00
+    ```
+
+    Your maximum `riskAmount` per parlay in this round-robin is **$375.00**.
+
+    <Tip>
+      Always recalculate the max round-robin stake from a fresh Get Parlay Lines response immediately before placing. Limits can change between calls.
+    </Tip>
+
+  </Step>
+
+</Steps>

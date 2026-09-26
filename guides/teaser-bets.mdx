@@ -1,0 +1,214 @@
+---
+title: 'Place teaser bets using the Pinnacle API'
+sidebarTitle: 'Teaser Bets'
+description: 'Use the four-step teaser flow — discover groups, fetch adjusted odds, validate the line, then place — to submit teaser wagers via the Pinnacle API.'
+---
+
+Teaser bets let you adjust the point spread or total for multiple legs in your favor, in exchange for reduced payout odds. The API exposes teasers through dedicated endpoints: you first discover the available teaser definitions and their rules, retrieve the currently adjusted points for each event, optionally validate your proposed bet for exact limits and pricing, and then submit the wager.
+
+<Steps>
+
+  <Step title="Get Teaser Groups">
+
+    Call `GET /v1/teaser/groups` to retrieve all available teaser definitions. Each group describes a family of teasers sharing the same structure, with individual teasers listed inside.
+
+    ```bash
+    curl -u username:password \
+      "https://api.pinnacle.com/v1/teaser/groups?oddsFormat=American"
+    ```
+
+    **Each teaser object contains:**
+
+    - `id` — the `teaserId` you pass to Get Teaser Odds and Place Teaser Bet
+    - `minLegs` / `maxLegs` — minimum and maximum number of legs allowed
+    - `payoutCombinations` — a matrix of leg count to payout odds
+    - `leagues` — the league IDs eligible for this teaser
+    - `isSameEventOnly` — if `true`, all legs must belong to the same event
+
+    Record the `teaserId` for the teaser you want to use and confirm that your target leagues are listed under `leagues`.
+
+    <Note>
+      The `leagues` array on a teaser group defines which leagues you can include. Submitting a leg from an ineligible league will result in an `INVALID_LEGS` error on the Get Teaser Lines or Place Teaser Bet call.
+    </Note>
+
+  </Step>
+
+  <Step title="Get Teaser Odds">
+
+    Call `GET /v1/odds/teaser` with your chosen `teaserId` to retrieve the adjusted spread and total points currently offered for each eligible event.
+
+    ```bash
+    curl -u username:password \
+      "https://api.pinnacle.com/v1/odds/teaser?teaserId=401"
+    ```
+
+    **Example response:**
+
+    ```json
+    {
+      "teaserId": 401,
+      "sportId": 4,
+      "leagues": [
+        {
+          "id": 487,
+          "events": [
+            {
+              "id": 840000123,
+              "periods": [
+                {
+                  "number": 0,
+                  "lineId": 527600100,
+                  "spread": {
+                    "maxBet": 500,
+                    "homeHdp": 9.5,
+                    "awayHdp": -9.5,
+                    "altHdp": false
+                  },
+                  "total": {
+                    "maxBet": 500,
+                    "overPoints": 48.5,
+                    "underPoints": 48.5
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+    ```
+
+    **The `altHdp` property**
+
+    When `altHdp` is `true` on a spread offering, the handicap for that event is being served with alternative teaser points rather than the standard points defined in the teaser group. Events with `altHdp: true` may have different point adjustments than the teaser definition describes — factor this in when building your legs.
+
+    <Note>
+      Record the `lineId` from each period you plan to include. You will pass these `lineId` values (not the ones from `/v2/odds`) directly to the Get Teaser Lines and Place Teaser Bet endpoints.
+    </Note>
+
+  </Step>
+
+  <Step title="Get Teaser Lines (Optional)">
+
+    Submit `POST /v1/line/teaser` to validate your proposed teaser bet before placing it. The response provides the effective price and min/max stake limits without actually placing the bet.
+
+    ```bash
+    curl -u username:password \
+      -X POST "https://api.pinnacle.com/v1/line/teaser" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "teaserId": 401,
+        "oddsFormat": "American",
+        "legs": [
+          {
+            "legId": "teaser-leg-001",
+            "eventId": 840000123,
+            "periodNumber": 0,
+            "betType": "SPREAD",
+            "team": "Team1",
+            "handicap": 9.5
+          },
+          {
+            "legId": "teaser-leg-002",
+            "eventId": 840000456,
+            "periodNumber": 0,
+            "betType": "TOTAL_POINTS",
+            "side": "OVER",
+            "handicap": 48.5
+          }
+        ]
+      }'
+    ```
+
+    **Successful validation response:**
+
+    ```json
+    {
+      "status": "VALID",
+      "price": -110,
+      "minRiskStake": 1.00,
+      "maxRiskStake": 500.00,
+      "minWinStake": 0.91,
+      "maxWinStake": 454.55,
+      "legs": [
+        {
+          "status": "VALID",
+          "legId": "teaser-leg-001",
+          "lineId": 527600100
+        },
+        {
+          "status": "VALID",
+          "legId": "teaser-leg-002",
+          "lineId": 527600200
+        }
+      ]
+    }
+    ```
+
+    If any leg returns `PROCESSED_WITH_ERROR`, check the `errorCode` on the failing leg. Common codes include `POINTS_NO_LONGER_AVAILABLE` (the line has moved — re-fetch teaser odds) and `GAME_TEASER_DISABLED` (teasers are not currently offered for this event).
+
+    <Warning>
+      Do not call `/v1/line/teaser` in a loop. Use it once per intended bet submission to verify validity and retrieve accurate limits.
+    </Warning>
+
+  </Step>
+
+  <Step title="Place Teaser Bet">
+
+    Submit `POST /v4/bets/straight` with `betType` set appropriately. Use the `teaserId`, leg details, and `lineId` values from the previous steps to build the request. Teaser bets are placed via the same straight-bet endpoint, identified by the teaser-specific `betType`.
+
+    ```bash
+    curl -u username:password \
+      -X POST "https://api.pinnacle.com/v4/bets/straight" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "uniqueRequestId": "d5cc50e4-284d-4d50-8d49-429bdc4f2a48",
+        "teaserId": 401,
+        "oddsFormat": "AMERICAN",
+        "winRiskStake": "RISK",
+        "stake": 50.00,
+        "legs": [
+          {
+            "legId": "teaser-leg-001",
+            "betType": "SPREAD",
+            "lineId": 527600100,
+            "eventId": 840000123,
+            "team": "Team1"
+          },
+          {
+            "legId": "teaser-leg-002",
+            "betType": "TOTAL_POINTS",
+            "lineId": 527600200,
+            "eventId": 840000456,
+            "side": "OVER"
+          }
+        ]
+      }'
+    ```
+
+    **Successful response:**
+
+    ```json
+    {
+      "status": "ACCEPTED",
+      "betId": 762000991,
+      "uniqueRequestId": "d5cc50e4-284d-4d50-8d49-429bdc4f2a48",
+      "price": -110,
+      "risk": 50.00,
+      "win": 45.45,
+      "validLegs": [
+        { "status": "VALID", "legId": "teaser-leg-001", "lineId": 527600100, "points": 9.5 },
+        { "status": "VALID", "legId": "teaser-leg-002", "lineId": 527600200, "points": 48.5 }
+      ]
+    }
+    ```
+
+    If `status` is `PROCESSED_WITH_ERROR`, examine both the top-level `errorCode` and the per-leg `errorCode` values in the `invalidLegs` array. The `CANNOT_TEASER_LIVE_GAME` error indicates the event has gone live and teasers are no longer accepted for it.
+
+    <Tip>
+      Only `SPREAD` and `TOTAL_POINTS` are valid teaser leg bet types. You cannot include moneyline or team-total legs in a teaser.
+    </Tip>
+
+  </Step>
+
+</Steps>

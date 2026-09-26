@@ -1,0 +1,259 @@
+---
+title: 'Place special and proposition bets via the API'
+sidebarTitle: 'Special Bets'
+description: 'Discover and wager on props, futures, and multi-way head-to-head markets using the Special Fixtures, Special Odds, and Place Special Bet endpoints.'
+---
+
+Special bets cover proposition markets, futures, and multi-way head-to-head contests that sit outside the standard spread, moneyline, and totals structure. Props and futures are both offered as specials — you access them through the dedicated `/fixtures/special` and `/odds/special` endpoints rather than the standard fixtures and odds routes. Special markets can be linked back to standard events through the `event` sub-object on each special fixture, making it straightforward to cross-reference with your existing event data.
+
+<Steps>
+
+  <Step title="Get Special Fixtures">
+
+    Call `GET /v1/fixtures/special` to retrieve all non-settled specials for a sport. The `since` parameter works the same way as standard fixtures: pass the `last` value from a prior response to receive only changed specials (delta mode).
+
+    ```bash
+    curl -u username:password \
+      "https://api.pinnacle.com/v1/fixtures/special?sportId=4"
+    ```
+
+    **Delta request (incremental update):**
+
+    ```bash
+    curl -u username:password \
+      "https://api.pinnacle.com/v1/fixtures/special?sportId=4&since=636433059508250600"
+    ```
+
+    **Example response:**
+
+    ```json
+    {
+      "sportId": 4,
+      "last": 636433059508250600,
+      "leagues": [
+        {
+          "id": 487,
+          "specials": [
+            {
+              "id": 1065232780,
+              "betType": "MULTI_WAY_HEAD_TO_HEAD",
+              "name": "Who will win the Eastern Conference?",
+              "date": "2024-04-01T00:00:00Z",
+              "cutoff": "2024-04-01T00:00:00Z",
+              "category": "Outright Winner",
+              "units": "",
+              "status": "O",
+              "event": {
+                "id": 1051780418,
+                "periodNumber": 1,
+                "home": "Boston Celtics",
+                "away": "Miami Heat"
+              },
+              "contestants": [
+                { "id": 1065232781, "name": "Boston Celtics", "rotNum": "100" },
+                { "id": 1065232782, "name": "Cleveland Cavaliers", "rotNum": "101" },
+                { "id": 1065232783, "name": "Orlando Magic", "rotNum": "102" }
+              ]
+            },
+            {
+              "id": 1065232790,
+              "betType": "MULTI_WAY_HEAD_TO_HEAD",
+              "name": "Denver Broncos Regular Season Wins?",
+              "date": "2024-09-08T00:00:00Z",
+              "cutoff": "2024-09-08T00:00:00Z",
+              "category": "Season Props",
+              "units": "Regular Season Wins",
+              "status": "O",
+              "contestants": [
+                { "id": 1065232791, "name": "Over 8.5", "rotNum": "200" },
+                { "id": 1065232792, "name": "Under 8.5", "rotNum": "201" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+    ```
+
+    **Fields to record:**
+
+    - `special.id` — the `specialId` required for Get Special Odds and Place Special Bet
+    - `contestant.id` — the `contestantId` required for Place Special Bet
+    - `status` — a special is bettable when `status` is `"O"` (open) or `"I"` (red circle, reduced limits)
+    - `cutoff` — the wagering deadline; no bets are accepted after this time
+    - `event` — when present, links the special back to the standard event from `/v1/fixtures`
+
+    **Props and futures:** These markets appear as specials with no `event` sub-object (league-level futures) or with an `event` sub-object (game props). Use the `event.id` to join back to your standard fixture data when you need team names or start times.
+
+  </Step>
+
+  <Step title="Get Special Odds">
+
+    Call `GET /v1/odds/special` to retrieve current prices for each contestant. Use `since` for incremental updates. You can filter by `specialId` to fetch prices for a single market.
+
+    ```bash
+    curl -u username:password \
+      "https://api.pinnacle.com/v1/odds/special?sportId=4&oddsFormat=American"
+    ```
+
+    **Filter by a specific special:**
+
+    ```bash
+    curl -u username:password \
+      "https://api.pinnacle.com/v1/odds/special?sportId=4&specialId=1065232780&oddsFormat=American"
+    ```
+
+    **Example response:**
+
+    ```json
+    {
+      "sportId": 4,
+      "last": 636433059510590700,
+      "leagues": [
+        {
+          "id": 487,
+          "specials": [
+            {
+              "id": 1065232780,
+              "maxBet": 100,
+              "contestantLines": [
+                {
+                  "id": 1065232781,
+                  "lineId": 51024310,
+                  "price": -150,
+                  "handicap": null,
+                  "max": 450
+                },
+                {
+                  "id": 1065232782,
+                  "lineId": 51024311,
+                  "price": 280,
+                  "handicap": null,
+                  "max": 450
+                },
+                {
+                  "id": 1065232783,
+                  "lineId": 51024312,
+                  "price": 550,
+                  "handicap": null,
+                  "max": 200
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+    ```
+
+    **Key fields:**
+
+    - `contestantLine.id` — this is the `contestantId` you pass to Place Special Bet
+    - `contestantLine.lineId` — the `lineId` required in Place Special Bet
+    - `contestantLine.price` — the current price for this contestant
+    - `contestantLine.max` — when present on a contestant, this overrides the special-level `maxBet` for that specific contestant
+    - `contestantLine.handicap` — the handicap for contestants that represent over/under markets (e.g. "Over 8.5 wins")
+
+    **Market open conditions:** A special market is available for betting when all three of the following are true:
+
+    1. The special's `status` in `/fixtures/special` is `"O"` or `"I"`.
+    2. The contestant appears in the `/odds/special` response (i.e. the market is priced).
+    3. The special's `cutoff` in `/fixtures/special` is in the future.
+
+    <Note>
+      When a contestant is not priced, it is absent from `contestantLines` — it will not appear with a null price. If the whole special is absent from the odds response, none of its contestants are currently priced.
+    </Note>
+
+  </Step>
+
+  <Step title="Get Special Lines (Optional)">
+
+    Call `GET /v1/line/special` to validate a proposed special bet and retrieve the exact effective price and stake limits without placing the bet.
+
+    ```bash
+    curl -u username:password \
+      "https://api.pinnacle.com/v1/line/special\
+    ?oddsFormat=American&specialId=1065232780&contestantId=1065232781"
+    ```
+
+    **Successful response:**
+
+    ```json
+    {
+      "status": "SUCCESS",
+      "price": -150,
+      "minRiskStake": 1.00,
+      "maxRiskStake": 450.00,
+      "minWinStake": 0.67,
+      "maxWinStake": 300.00
+    }
+    ```
+
+    A `NOT_EXISTS` status means the contestant is no longer offered — re-fetch special odds before proceeding.
+
+    <Tip>
+      Pass the optional `handicap` parameter if you want stricter validation. If the contestant's handicap has changed since you fetched odds, the endpoint returns `NOT_EXISTS` instead of `SUCCESS` with the new handicap — this prevents you from unknowingly placing at a different line.
+    </Tip>
+
+  </Step>
+
+  <Step title="Place Special Bet">
+
+    Submit `POST /v4/bets/special` to place one or more special bets in a single request. Each bet is wrapped in the `bets` array, allowing you to place multiple special wagers atomically.
+
+    ```bash
+    curl -u username:password \
+      -X POST "https://api.pinnacle.com/v4/bets/special" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "bets": [
+          {
+            "uniqueRequestId": "10924e23-a2fe-4317-bffd-80504675f554",
+            "acceptBetterLine": true,
+            "oddsFormat": "AMERICAN",
+            "stake": 20.00,
+            "winRiskStake": "RISK",
+            "lineId": 51024310,
+            "specialId": 1065232780,
+            "contestantId": 1065232781
+          }
+        ]
+      }'
+    ```
+
+    **Successful response:**
+
+    ```json
+    {
+      "bets": [
+        {
+          "status": "ACCEPTED",
+          "betId": 760745142,
+          "uniqueRequestId": "10924e23-a2fe-4317-bffd-80504675f554",
+          "win": 13.33,
+          "risk": 20.00,
+          "price": -150,
+          "betterLineWasAccepted": false
+        }
+      ]
+    }
+    ```
+
+    Each element in the `bets` response corresponds to the same-index element in your request. Check `status` on each individual bet response — a single request can contain a mix of `ACCEPTED` and `PROCESSED_WITH_ERROR` results.
+
+    **Common error codes:**
+
+    | Error code | Meaning |
+    |---|---|
+    | `CONTEST_NOT_FOUND` | The `specialId` or `contestantId` is incorrect, or the special is no longer available. |
+    | `LINE_CHANGED` | The line moved after you fetched odds. Re-fetch `/odds/special` and retry with a new `uniqueRequestId`. |
+    | `PAST_CUTOFFTIME` | The special's cutoff has passed. |
+    | `DUPLICATED_REQUEST` | You reused a `uniqueRequestId`. Generate a new UUID if you intend a new bet. |
+
+    <Warning>
+      Each bet in the `bets` array must have a distinct `uniqueRequestId`. Reusing the same ID across multiple bets in one request results in a `DUPLICATED_REQUEST` error for subsequent entries.
+    </Warning>
+
+  </Step>
+
+</Steps>

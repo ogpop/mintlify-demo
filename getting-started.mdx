@@ -1,0 +1,251 @@
+---
+title: 'Get started placing bets with the Pinnacle API'
+sidebarTitle: 'Quick Start'
+description: 'Follow this step-by-step guide to go from listing available sports and leagues to placing and confirming your first straight bet with the Pinnacle API.'
+---
+
+Placing a bet programmatically involves a short chain of API calls: discover what's available, retrieve the current odds, optionally validate the line, place the bet, and then confirm it was accepted. Each step feeds the next — identifiers you receive in one response become required parameters in the next request. This guide walks you through the complete flow for a straight bet.
+
+<Steps>
+
+## Get Sports and Leagues
+
+Before you can request fixtures or odds, you need the `sportId` and `leagueId` values that identify the markets you want to bet on.
+
+**Get available sports** — Call `GET /v2/sports` to retrieve the full list of sports. The `hasOfferings` field on each sport tells you whether that sport currently has active markets. Only sports where `hasOfferings` is `true` will return meaningful data from subsequent calls.
+
+```bash
+curl --request GET \
+  --url "https://api.pinnacle.com/v2/sports" \
+  --header "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  --header "Accept: application/json" \
+  --header "User-Agent: MyBettingApp/1.0"
+```
+
+**Get leagues for a sport** — Once you have a `sportId`, call `GET /v2/leagues?sportId={id}` to list every league in that sport. Again, filter by `hasOfferings: true` to focus on leagues with live markets.
+
+```bash
+curl --request GET \
+  --url "https://api.pinnacle.com/v2/leagues?sportId=29" \
+  --header "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  --header "Accept: application/json" \
+  --header "User-Agent: MyBettingApp/1.0"
+```
+
+<Note>
+  The `/v2/sports` endpoint should be called at most once every 60 minutes. The list of sports changes rarely and frequent polling wastes your rate-limit budget.
+</Note>
+
+## Get Fixtures
+
+Fixtures describe the events available for betting — the teams, start time, live status, and identifiers you need for placing bets.
+
+**Snapshot call first** — Always start with a snapshot call: `GET /v1/fixtures?sportId={id}` with no `since` parameter. This returns all currently non-settled events for the sport.
+
+```bash
+curl --request GET \
+  --url "https://api.pinnacle.com/v1/fixtures?sportId=29" \
+  --header "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  --header "Accept: application/json" \
+  --header "User-Agent: MyBettingApp/1.0"
+```
+
+**Then use delta calls** — The response includes a `last` property. Pass it as the `since` parameter on subsequent calls to receive only events that changed since your previous request. Delta calls are faster and return smaller payloads.
+
+```bash
+curl --request GET \
+  --url "https://api.pinnacle.com/v1/fixtures?sportId=29&since=148671597" \
+  --header "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  --header "Accept: application/json" \
+  --header "User-Agent: MyBettingApp/1.0"
+```
+
+**Understanding `liveStatus`** — Each event carries a `liveStatus` field that tells you its current state:
+
+| Value | Meaning |
+|---|---|
+| `0` | Pre-match event |
+| `1` | Live (in-play) event |
+| `2` | Pre-match event that also has a live counterpart |
+
+**Grouping related events with `parentId`** — Live events (`liveStatus: 1`) always have a `parentId` pointing to the originating pre-match event. Use `parentId` to group and link associated events together. Pre-match parent events never have a `parentId` set.
+
+**Filter by league** — Include `leagueIds` to narrow results to specific leagues and reduce response size:
+
+```bash
+curl --request GET \
+  --url "https://api.pinnacle.com/v1/fixtures?sportId=29&leagueIds=2331,5595" \
+  --header "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  --header "Accept: application/json" \
+  --header "User-Agent: MyBettingApp/1.0"
+```
+
+## Get Odds
+
+Odds carry the prices and line identifiers you need to place a bet. The structure mirrors the fixtures endpoint: snapshot first, then deltas.
+
+**Snapshot call** — Call `GET /v2/odds?sportId={id}` without `since` to get a full odds snapshot:
+
+```bash
+curl --request GET \
+  --url "https://api.pinnacle.com/v2/odds?sportId=29" \
+  --header "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  --header "Accept: application/json" \
+  --header "User-Agent: MyBettingApp/1.0"
+```
+
+**What the odds response contains** — For each event period you receive:
+
+- **Spreads** — Home and away prices with handicap (`hdp`) and an optional `altLineId` for alternate lines
+- **Moneyline** — Home, away, and draw prices
+- **Totals** — Over/under prices with points line and optional `altLineId`
+- **Team totals** — Per-team over/under markets
+
+**Critical identifiers** — Two fields from the odds response are essential for placing a bet:
+
+- `lineId` — Identifies the period line. Found at the `Period Type` level.
+- `altLineId` — Identifies the specific alternate line (spread or totals). Found on `Spread Type` and `Total Points Type`.
+
+**Volume limits** — Each period also returns `maxSpread`, `maxMoneyline`, and `maxTotal` fields representing the maximum bet volume in USD. For prices below decimal odds of 2.0, apply the formula `maxRisk = maxVolume / (price - 1)` to derive the maximum risk amount.
+
+<Note>
+  Snapshot calls to `/v2/odds` are cached for up to 60 seconds. Delta calls (with `since`) are not cached and always return the latest changes.
+</Note>
+
+## Check a Line (Optional)
+
+Before placing a bet, you can call `GET /v1/line` to validate that the line you selected is still available and to receive the exact bet limits for your account rather than the general limits from the odds response.
+
+```bash
+curl --request GET \
+  --url "https://api.pinnacle.com/v1/line?sportId=29&leagueId=2331&eventId=837721686&periodNumber=0&betType=MONEYLINE&team=TEAM1&oddsFormat=American" \
+  --header "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  --header "Accept: application/json" \
+  --header "User-Agent: MyBettingApp/1.0"
+```
+
+<Warning>
+  Never call `/v1/line` in a loop or as a polling mechanism. This endpoint exists solely to validate a specific line immediately before placing a bet. Excessive calls will exhaust your rate limit.
+</Warning>
+
+## Place a Bet
+
+With fixture and odds data in hand, you can place a straight bet by posting to `POST /v4/bets/straight`.
+
+**Mapping odds response fields to place-bet parameters** — Use the following table to map the identifiers from your `GET /v2/odds` and `GET /v2/leagues` responses to the fields in your place-bet request:
+
+| Place Bet Field | Source |
+|---|---|
+| `sportId` | Top-level `sportId` from the odds response |
+| `leagueId` | `League Type → id` from the odds response |
+| `eventId` | `Event Type → id` from the odds response |
+| `periodNumber` | `Period Type → number` from the odds response |
+| `lineId` | `Period Type → lineId` from the odds response |
+| `altLineId` | `Spread Type → altLineId` or `Total Points Type → altLineId` |
+| `handicap` | `Spread Type → hdp`, `Total Points Type → points`, or `Team Total Points → points` |
+
+**Mapping the `team` field** — The `team` parameter uses `Team1`/`Team2` identifiers, not `home`/`away`. The mapping depends on the `homeTeamType` property returned by `GET /v2/leagues`:
+
+| Scenario | Result |
+|---|---|
+| `homeTeamType = "Team1"` and you want the home team | `team = Team1` |
+| `homeTeamType = "Team1"` and you want the away team | `team = Team2` |
+| `homeTeamType = "Team2"` and you want the home team | `team = Team2` |
+| `homeTeamType = "Team2"` and you want the away team | `team = Team1` |
+| Moneyline draw | `team = Draw` |
+
+**Example request body:**
+
+```json
+{
+  "oddsFormat": "American",
+  "uniqueRequestId": "d5cc50e4-284d-4d50-8d49-429bdc4f2a48",
+  "acceptBetterLine": true,
+  "stake": 25.00,
+  "winRiskStake": "RISK",
+  "sportId": 29,
+  "eventId": 837721686,
+  "leagueId": 2331,
+  "periodNumber": 0,
+  "betType": "MONEYLINE",
+  "team": "Team1",
+  "lineId": 527557614,
+  "altLineId": null,
+  "fillType": "NORMAL"
+}
+```
+
+**Full cURL example:**
+
+```bash
+curl --request POST \
+  --url "https://api.pinnacle.com/v4/bets/straight" \
+  --header "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  --header "Accept: application/json" \
+  --header "Content-Type: application/json" \
+  --header "User-Agent: MyBettingApp/1.0" \
+  --data '{
+    "oddsFormat": "American",
+    "uniqueRequestId": "d5cc50e4-284d-4d50-8d49-429bdc4f2a48",
+    "acceptBetterLine": true,
+    "stake": 25.00,
+    "winRiskStake": "RISK",
+    "sportId": 29,
+    "eventId": 837721686,
+    "leagueId": 2331,
+    "periodNumber": 0,
+    "betType": "MONEYLINE",
+    "team": "Team1",
+    "lineId": 527557614,
+    "altLineId": null,
+    "fillType": "NORMAL"
+  }'
+```
+
+<Warning>
+  Always pass **both** `lineId` and `altLineId` from your odds or line response. If you selected an alternate spread or totals line and omit `altLineId`, the API will place the bet on the main line instead — not the alternate line you intended.
+</Warning>
+
+The `uniqueRequestId` is a client-generated UUID that enables safe retries. If you receive an unexpected error, resubmit the same request with the same `uniqueRequestId` — the API deduplicates requests for 30 minutes and will not create a duplicate bet.
+
+## Check Bet Status
+
+After placing a bet, verify its status by calling `GET /v4/bets`.
+
+**By `uniqueRequestId`** (recommended):
+
+```bash
+curl --request GET \
+  --url "https://api.pinnacle.com/v4/bets?uniqueRequestIds=d5cc50e4-284d-4d50-8d49-429bdc4f2a48" \
+  --header "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  --header "Accept: application/json" \
+  --header "User-Agent: MyBettingApp/1.0"
+```
+
+**By `betId`** (once you have it):
+
+```bash
+curl --request GET \
+  --url "https://api.pinnacle.com/v4/bets?betIds=759629245" \
+  --header "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  --header "Accept: application/json" \
+  --header "User-Agent: MyBettingApp/1.0"
+```
+
+Querying by `uniqueRequestId` is preferred because live bets may not have a `betId` until they transition out of `PENDING_ACCEPTANCE`. You always know your own `uniqueRequestId`, so it works regardless of bet state. Live bets incur a delay of approximately 6 seconds before a status is available — wait at least 6 seconds before your first status poll on a live event bet.
+
+</Steps>
+
+## What to Explore Next
+
+<CardGroup cols={3}>
+  <Card title="Straight Bets" icon="ticket" href="/guides/straight-bets">
+    Deep-dive into spread, moneyline, and totals bet placement with full field references.
+  </Card>
+  <Card title="Live Betting" icon="circle-play" href="/guides/live-betting">
+    Learn how live delay works, when bets enter PENDING_ACCEPTANCE, and how to poll correctly.
+  </Card>
+  <Card title="Deduplication" icon="copy" href="/guides/deduplication">
+    Understand how uniqueRequestId prevents duplicate bets when retrying on network errors.
+  </Card>
+</CardGroup>

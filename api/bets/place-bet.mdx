@@ -1,0 +1,628 @@
+---
+title: 'Place bets via the Pinnacle Bets API v4'
+sidebarTitle: 'Place Bets'
+description: 'POST endpoints for placing straight, parlay, and special bets via the Pinnacle Bets API v4, with request fields, error codes, and deduplication guidance.'
+---
+
+The Bets API v4 exposes three POST endpoints for placing wagers: straight bets for single-event markets, parlay bets for multi-leg and round-robin combinations, and special bets for props and futures. All endpoints require HTTP Basic authentication, and every request must include a `uniqueRequestId` UUID that lets you safely retry on network failures without duplicating bets. In v4, place-bet responses are intentionally lightweight — you receive a status and, when immediately accepted, a `betId`, but full bet details are only available through `GET /v4/bets`.
+
+<Warning>
+  Bets API v4 place-bet responses **do not** include full bet details such as win/risk amounts or odds. After a bet is accepted, call `GET /v4/bets?betIds={betId}` or `GET /v4/bets?uniqueRequestIds={uniqueRequestId}` to retrieve the complete record.
+</Warning>
+
+---
+
+## POST /v4/bets/straight
+
+Place a straight (single) bet on any supported market: `SPREAD`, `MONEYLINE`, `TOTAL_POINTS`, or `TEAM_TOTAL_POINTS`. You must have already obtained a `lineId` from the Get Odds or Get Line endpoint before calling this endpoint. For live events, the response may return `PENDING_ACCEPTANCE` without a `betId`; poll `GET /v4/bets` by `uniqueRequestId` until the status resolves.
+
+### Request
+
+<Tabs>
+  <Tab title="curl">
+    ```bash
+    curl -X POST 'https://api.pinnacle.com/v4/bets/straight' \
+      -H 'Authorization: Basic {base64credentials}' \
+      -H 'Content-Type: application/json' \
+      -H 'Accept: application/json' \
+      -d '{
+        "uniqueRequestId": "d5cc50e4-284d-4d50-8d49-429bdc4f2a48",
+        "acceptBetterLine": true,
+        "stake": 50.00,
+        "winRiskStake": "RISK",
+        "oddsFormat": "AMERICAN",
+        "fillType": "NORMAL",
+        "sportId": 29,
+        "eventId": 757504261,
+        "periodNumber": 0,
+        "betType": "MONEYLINE",
+        "team": "TEAM1",
+        "lineId": 420921914
+      }'
+    ```
+  </Tab>
+  <Tab title="JSON body">
+    ```json
+    {
+      "uniqueRequestId": "d5cc50e4-284d-4d50-8d49-429bdc4f2a48",
+      "acceptBetterLine": true,
+      "stake": 50.00,
+      "winRiskStake": "RISK",
+      "oddsFormat": "AMERICAN",
+      "fillType": "NORMAL",
+      "sportId": 29,
+      "eventId": 757504261,
+      "periodNumber": 0,
+      "betType": "MONEYLINE",
+      "team": "TEAM1",
+      "lineId": 420921914
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Request body parameters
+
+<ParamField body="uniqueRequestId" type="string" required>
+  A UUID v4 you generate per bet attempt. Used for idempotency — if you retry a request with the same `uniqueRequestId`, the API will not create a duplicate bet. Generate a new UUID for each distinct bet; reuse the same UUID only on retries of the same bet.
+</ParamField>
+
+<ParamField body="acceptBetterLine" type="boolean" required>
+  When `true`, the bet is accepted even if the line moves in your favour between request and processing. Set to `false` if you want the bet to reject on any line movement.
+</ParamField>
+
+<ParamField body="stake" type="number" required>
+  The wager amount in your account currency. Whether this is the amount you are risking or the amount you want to win depends on `winRiskStake`.
+</ParamField>
+
+<ParamField body="winRiskStake" type="string" required>
+  Determines how `stake` is interpreted.
+
+  | Value | Meaning |
+  |-------|---------|
+  | `RISK` | `stake` is the amount you are risking |
+  | `WIN`  | `stake` is the amount you want to win |
+</ParamField>
+
+<ParamField body="oddsFormat" type="string" required>
+  The odds format for this bet. Must be one of: `AMERICAN`, `DECIMAL`, `HONGKONG`, `INDONESIAN`, `MALAY`.
+</ParamField>
+
+<ParamField body="fillType" type="string" required>
+  Controls how stake limits are handled.
+
+  | Value | Behaviour |
+  |-------|-----------|
+  | `NORMAL` | Place the bet at exactly the specified `stake`. Default. |
+  | `FILLANDKILL` | If `stake` exceeds the current max limit, place at the max limit; otherwise use `stake`. |
+  | `FILLMAXLIMIT` | Always place at the current max limit; `stake` is ignored. **Caution:** max limits can change at any moment. |
+</ParamField>
+
+<ParamField body="sportId" type="integer" required>
+  The numeric sport identifier. Obtain this from the Sports endpoint.
+</ParamField>
+
+<ParamField body="eventId" type="integer" required>
+  The numeric event identifier. Obtain this from the Fixtures endpoint.
+</ParamField>
+
+<ParamField body="periodNumber" type="integer" required>
+  The period of the match to bet on. `0` represents the full game. For soccer: `1` = 1st Half, `2` = 2nd Half.
+</ParamField>
+
+<ParamField body="betType" type="string" required>
+  The type of straight bet. One of: `SPREAD`, `MONEYLINE`, `TOTAL_POINTS`, `TEAM_TOTAL_POINTS`.
+</ParamField>
+
+<ParamField body="team" type="string">
+  Required for `SPREAD`, `MONEYLINE`, and `TEAM_TOTAL_POINTS` bet types. One of: `TEAM1`, `TEAM2`, `DRAW`.
+</ParamField>
+
+<ParamField body="side" type="string">
+  Required for `TOTAL_POINTS` and `TEAM_TOTAL_POINTS` bet types. One of: `OVER`, `UNDER`.
+</ParamField>
+
+<ParamField body="handicap" type="number">
+  Required for `SPREAD`, `TOTAL_POINTS`, and `TEAM_TOTAL_POINTS` bet types. The handicap or total points value as returned by the Get Odds response.
+</ParamField>
+
+<ParamField body="lineId" type="integer" required>
+  The line identifier returned by the Get Odds or Get Line endpoint. Lines expire and change frequently — always use the most recently fetched `lineId`.
+</ParamField>
+
+<ParamField body="altLineId" type="integer">
+  The alternate line identifier, available in the Get Odds response for alternate spreads or totals. If omitted, the bet is placed on the main line.
+</ParamField>
+
+<ParamField body="pitcher1MustStart" type="boolean">
+  Baseball only. When `true`, the bet is cancelled if listed Pitcher 1 does not start the game.
+</ParamField>
+
+<ParamField body="pitcher2MustStart" type="boolean">
+  Baseball only. When `true`, the bet is cancelled if listed Pitcher 2 does not start the game.
+</ParamField>
+
+### Response
+
+<Tabs>
+  <Tab title="ACCEPTED">
+    ```json
+    {
+      "betId": 759629245,
+      "status": "ACCEPTED",
+      "uniqueRequestId": "d5cc50e4-284d-4d50-8d49-429bdc4f2a48",
+      "win": 20.06,
+      "risk": 11.73,
+      "price": 171,
+      "betterLineWasAccepted": false
+    }
+    ```
+  </Tab>
+  <Tab title="PENDING_ACCEPTANCE (live delay)">
+    ```json
+    {
+      "status": "PENDING_ACCEPTANCE",
+      "uniqueRequestId": "41812e84-132e-499e-9b21-a6d0a8ad06a4"
+    }
+    ```
+  </Tab>
+  <Tab title="PROCESSED_WITH_ERROR">
+    ```json
+    {
+      "status": "PROCESSED_WITH_ERROR",
+      "errorCode": "LINE_CHANGED",
+      "uniqueRequestId": "33cdb889-5ff0-4ce1-b9a1-8a9f00248512"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<ResponseField name="status" type="string" required>
+  The outcome of the placement attempt.
+
+  | Value | Meaning |
+  |-------|---------|
+  | `ACCEPTED` | Bet was accepted immediately |
+  | `PENDING_ACCEPTANCE` | Live bet is under review due to live delay or danger zone; poll by `uniqueRequestId` |
+  | `PROCESSED_WITH_ERROR` | Bet was rejected; see `errorCode` |
+</ResponseField>
+
+<ResponseField name="betId" type="integer">
+  The bet identifier. Present only when `status` is `ACCEPTED`. Absent for live-delay bets returning `PENDING_ACCEPTANCE`.
+</ResponseField>
+
+<ResponseField name="uniqueRequestId" type="string" required>
+  Echo of the `uniqueRequestId` you sent in the request.
+</ResponseField>
+
+<ResponseField name="win" type="number">
+  Potential win amount in your account currency. Present on `ACCEPTED` responses.
+</ResponseField>
+
+<ResponseField name="risk" type="number">
+  Risk amount in your account currency. Present on `ACCEPTED` responses.
+</ResponseField>
+
+<ResponseField name="price" type="number">
+  The accepted odds price. Present on `ACCEPTED` responses.
+</ResponseField>
+
+<ResponseField name="betterLineWasAccepted" type="boolean">
+  `true` if the bet was placed on a line that moved in your favour and `acceptBetterLine` was `true` in the request.
+</ResponseField>
+
+<ResponseField name="errorCode" type="string">
+  Present only when `status` is `PROCESSED_WITH_ERROR`. Common values include:
+
+  <Expandable title="Error codes">
+    | Code | Description |
+    |------|-------------|
+    | `LINE_CHANGED` | The line changed between your request and processing |
+    | `INSUFFICIENT_FUNDS` | Account balance is too low for this stake |
+    | `ABOVE_MAX_BET_AMOUNT` | Stake exceeds the allowed maximum |
+    | `BELOW_MIN_BET_AMOUNT` | Stake is below the allowed minimum |
+    | `ABOVE_EVENT_MAX` | You have exceeded the maximum allowed risk on this line |
+    | `OFFLINE_EVENT` | Event is offline or the line is not currently offered |
+    | `PAST_CUTOFFTIME` | Bet cutoff time for this event has passed |
+    | `BLOCKED_BETTING` | Betting is suspended for your account |
+    | `BLOCKED_CLIENT` | Your account is no longer active |
+    | `INVALID_COUNTRY` | Betting is not allowed from your country |
+    | `INVALID_EVENT` | The `eventId` is invalid |
+    | `INVALID_ODDS_FORMAT` | The odds format is not permitted for your account |
+    | `ALL_BETTING_CLOSED` | Betting is temporarily disabled (e.g. maintenance) |
+    | `ALL_LIVE_BETTING_CLOSED` | Live betting is temporarily disabled |
+    | `RED_CARDS_CHANGED` | Red card count changed for this live soccer event |
+    | `SCORE_CHANGED` | Score changed for this live soccer event |
+    | `TIME_RESTRICTION` | Too little time has elapsed since your last identical bet |
+    | `DUPLICATED_REQUEST` | A bet with this `uniqueRequestId` was already processed |
+    | `BETTING_SUSPENDED` | Market is suspended due to anomalous conditions; retry with the next `lineId` |
+    | `SYSTEM_ERROR_3` | Unexpected internal error |
+  </Expandable>
+</ResponseField>
+
+---
+
+## POST /v4/bets/parlay
+
+Place a parlay bet combining two or more straight-bet legs, or a round-robin of multiple parlays. Before calling this endpoint, call the Get Parlay Lines endpoint to validate your legs and retrieve valid `roundRobinOptions`. Each leg must use a supported bet type (`SPREAD`, `MONEYLINE`, `TOTAL_POINTS`, or `TEAM_TOTAL_POINTS`) and a maximum of 10 legs can be specified. The `riskAmount` field applies per parlay when round-robin options produce multiple parlays.
+
+### Request
+
+<Tabs>
+  <Tab title="curl">
+    ```bash
+    curl -X POST 'https://api.pinnacle.com/v4/bets/parlay' \
+      -H 'Authorization: Basic {base64credentials}' \
+      -H 'Content-Type: application/json' \
+      -H 'Accept: application/json' \
+      -d '{
+        "uniqueRequestId": "a9eb2eb1-13a5-4600-9f1b-4859379cdec4",
+        "acceptBetterLine": true,
+        "riskAmount": 25.00,
+        "oddsFormat": "DECIMAL",
+        "roundRobinOptions": ["Parlay"],
+        "legs": [
+          {
+            "uniqueLegId": "CFAD8ACF-E410-437C-8F0F-33611F565981",
+            "lineId": 1633933741,
+            "sportId": 29,
+            "eventId": 758023991,
+            "periodNumber": 0,
+            "legBetType": "MONEYLINE",
+            "team": "TEAM1"
+          },
+          {
+            "uniqueLegId": "D9F01B2E-5C3A-4812-A7D4-90822C3B1042",
+            "lineId": 1633614701,
+            "sportId": 29,
+            "eventId": 758024105,
+            "periodNumber": 0,
+            "legBetType": "MONEYLINE",
+            "team": "TEAM2"
+          }
+        ]
+      }'
+    ```
+  </Tab>
+  <Tab title="JSON body">
+    ```json
+    {
+      "uniqueRequestId": "a9eb2eb1-13a5-4600-9f1b-4859379cdec4",
+      "acceptBetterLine": true,
+      "riskAmount": 25.00,
+      "oddsFormat": "DECIMAL",
+      "roundRobinOptions": ["Parlay"],
+      "legs": [
+        {
+          "uniqueLegId": "CFAD8ACF-E410-437C-8F0F-33611F565981",
+          "lineId": 1633933741,
+          "sportId": 29,
+          "eventId": 758023991,
+          "periodNumber": 0,
+          "legBetType": "MONEYLINE",
+          "team": "TEAM1"
+        },
+        {
+          "uniqueLegId": "D9F01B2E-5C3A-4812-A7D4-90822C3B1042",
+          "lineId": 1633614701,
+          "sportId": 29,
+          "eventId": 758024105,
+          "periodNumber": 0,
+          "legBetType": "MONEYLINE",
+          "team": "TEAM2"
+        }
+      ]
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Request body parameters
+
+<ParamField body="uniqueRequestId" type="string" required>
+  A UUID v4 you generate for this parlay request. Used for idempotency.
+</ParamField>
+
+<ParamField body="acceptBetterLine" type="boolean" required>
+  When `true`, the bet is accepted if any line moves in your favour.
+</ParamField>
+
+<ParamField body="riskAmount" type="number" required>
+  The amount to risk in your account currency. For round-robin parlays, this amount is applied per individual parlay combination.
+</ParamField>
+
+<ParamField body="oddsFormat" type="string" required>
+  The odds format. One of: `AMERICAN`, `DECIMAL`, `HONGKONG`, `INDONESIAN`, `MALAY`.
+</ParamField>
+
+<ParamField body="roundRobinOptions" type="array" required>
+  An array of round-robin options returned by the Get Parlay Lines response. Use `["Parlay"]` for a standard parlay. Available values: `Parlay`, `TwoLegRoundRobin`, `ThreeLegRoundRobin`, `FourLegRoundRobin`, `FiveLegRoundRobin`, `SixLegRoundRobin`, `SevenLegRoundRobin`, `EightLegRoundRobin`.
+</ParamField>
+
+<ParamField body="legs" type="array" required>
+  An array of leg objects. Minimum 2, maximum 10 legs.
+
+  <Expandable title="Leg fields">
+    <ParamField body="legs[].uniqueLegId" type="string" required>
+      A unique identifier you assign to this leg. Used to match legs in the response.
+    </ParamField>
+    <ParamField body="legs[].lineId" type="integer" required>
+      Line identifier from the Get Odds or Get Parlay Lines response.
+    </ParamField>
+    <ParamField body="legs[].altLineId" type="integer">
+      Alternate line identifier for alternate spreads or totals.
+    </ParamField>
+    <ParamField body="legs[].sportId" type="integer" required>
+      Sport identifier for this leg.
+    </ParamField>
+    <ParamField body="legs[].eventId" type="integer" required>
+      Event identifier for this leg.
+    </ParamField>
+    <ParamField body="legs[].periodNumber" type="integer" required>
+      Period number. `0` = full game.
+    </ParamField>
+    <ParamField body="legs[].legBetType" type="string" required>
+      Bet type for this leg. One of: `MONEYLINE`, `SPREAD`, `TOTAL_POINTS`, `TEAM_TOTAL_POINTS`.
+    </ParamField>
+    <ParamField body="legs[].team" type="string">
+      Required for `SPREAD` and `MONEYLINE`. One of: `TEAM1`, `TEAM2`.
+    </ParamField>
+    <ParamField body="legs[].side" type="string">
+      Required for `TOTAL_POINTS`. One of: `OVER`, `UNDER`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Response
+
+<Tabs>
+  <Tab title="ACCEPTED">
+    ```json
+    {
+      "betId": 1525403345,
+      "status": "ACCEPTED",
+      "uniqueRequestId": "a9eb2eb1-13a5-4600-9f1b-4859379cdec4",
+      "roundRobinOptionWithOdds": [
+        {
+          "roundRobinOption": "Parlay",
+          "odds": 1.837,
+          "unroundedDecimalOdds": 1.8375214328289233
+        }
+      ],
+      "maxRiskStake": 7142.78,
+      "minRiskStake": 4.76,
+      "validLegs": [
+        {
+          "status": "VALID",
+          "errorCode": null,
+          "legId": "CFAD8ACF-E410-437C-8F0F-33611F565981",
+          "lineId": 1633933741,
+          "price": 1.228
+        },
+        {
+          "status": "VALID",
+          "errorCode": null,
+          "legId": "D9F01B2E-5C3A-4812-A7D4-90822C3B1042",
+          "lineId": 1633614701,
+          "price": 1.337
+        }
+      ],
+      "invalidLegs": []
+    }
+    ```
+  </Tab>
+  <Tab title="PROCESSED_WITH_ERROR">
+    ```json
+    {
+      "status": "PROCESSED_WITH_ERROR",
+      "errorCode": "INVALID_LEGS",
+      "betId": null,
+      "uniqueRequestId": "e5d6a297-70ff-49a7-b854-c4ac3c616e57",
+      "roundRobinOptionWithOdds": [
+        {
+          "roundRobinOption": "Parlay",
+          "odds": 156,
+          "unroundedDecimalOdds": 2.5619967793880836
+        }
+      ],
+      "maxRiskStake": 160256.41,
+      "minRiskStake": 0.01,
+      "validLegs": [
+        {
+          "status": "VALID",
+          "errorCode": null,
+          "legId": "CFAD8ACF-E410-437C-8F0F-33611F565981",
+          "lineId": 1633267012,
+          "price": -270
+        }
+      ],
+      "invalidLegs": [
+        {
+          "status": "PROCESSED_WITH_ERROR",
+          "errorCode": "LINE_CHANGED",
+          "legId": "D9F01B2E-5C3A-4812-A7D4-90822C3B1042",
+          "lineId": 1633395088,
+          "price": -115
+        }
+      ]
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<ResponseField name="status" type="string" required>
+  `ACCEPTED` or `PROCESSED_WITH_ERROR`.
+</ResponseField>
+
+<ResponseField name="betId" type="integer">
+  The bet identifier. Present when `status` is `ACCEPTED`.
+</ResponseField>
+
+<ResponseField name="uniqueRequestId" type="string">
+  Echo of the `uniqueRequestId` from your request.
+</ResponseField>
+
+<ResponseField name="roundRobinOptionWithOdds" type="array">
+  Array of round-robin options with their combined parlay odds and unrounded decimal odds.
+</ResponseField>
+
+<ResponseField name="maxRiskStake" type="number">
+  Maximum allowable risk stake for this parlay combination.
+</ResponseField>
+
+<ResponseField name="minRiskStake" type="number">
+  Minimum allowable risk stake for this parlay combination.
+</ResponseField>
+
+<ResponseField name="validLegs" type="array">
+  Array of legs that passed validation, each with `status`, `legId`, `lineId`, and `price`.
+</ResponseField>
+
+<ResponseField name="invalidLegs" type="array">
+  Array of legs that failed validation, each with `status`, `errorCode`, `legId`, `lineId`, and `price`.
+</ResponseField>
+
+---
+
+## POST /v4/bets/special
+
+Place a bet on a special market — props, futures, or any contest-based offering. You must obtain `lineId`, `specialId`, and `contestantId` from the Special Odds endpoint before calling this endpoint. The request body wraps bets in a `bets` array, supporting batch placement of multiple special bets in a single call.
+
+### Request
+
+<Tabs>
+  <Tab title="curl">
+    ```bash
+    curl -X POST 'https://api.pinnacle.com/v4/bets/special' \
+      -H 'Authorization: Basic {base64credentials}' \
+      -H 'Content-Type: application/json' \
+      -H 'Accept: application/json' \
+      -d '{
+        "bets": [
+          {
+            "uniqueRequestId": "10924e23-a2fe-4317-bffd-80504675f554",
+            "acceptBetterLine": true,
+            "stake": 10.50,
+            "winRiskStake": "RISK",
+            "oddsFormat": "AMERICAN",
+            "lineId": 51024304,
+            "specialId": 726394409,
+            "contestantId": 726394411
+          }
+        ]
+      }'
+    ```
+  </Tab>
+  <Tab title="JSON body">
+    ```json
+    {
+      "bets": [
+        {
+          "uniqueRequestId": "10924e23-a2fe-4317-bffd-80504675f554",
+          "acceptBetterLine": true,
+          "stake": 10.50,
+          "winRiskStake": "RISK",
+          "oddsFormat": "AMERICAN",
+          "lineId": 51024304,
+          "specialId": 726394409,
+          "contestantId": 726394411
+        }
+      ]
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Request body parameters
+
+<ParamField body="bets" type="array" required>
+  An array of special bet objects. Each object contains the following fields:
+
+  <Expandable title="Bet fields">
+    <ParamField body="bets[].uniqueRequestId" type="string" required>
+      A UUID v4 for this bet request. Each individual bet must have a distinct `uniqueRequestId`.
+    </ParamField>
+    <ParamField body="bets[].acceptBetterLine" type="boolean" required>
+      When `true`, accept the bet if the line moves in your favour.
+    </ParamField>
+    <ParamField body="bets[].stake" type="number" required>
+      Wager amount in your account currency.
+    </ParamField>
+    <ParamField body="bets[].winRiskStake" type="string" required>
+      Whether `stake` represents the risk amount (`RISK`) or desired win amount (`WIN`).
+    </ParamField>
+    <ParamField body="bets[].oddsFormat" type="string" required>
+      Odds format. One of: `AMERICAN`, `DECIMAL`, `HONGKONG`, `INDONESIAN`, `MALAY`.
+    </ParamField>
+    <ParamField body="bets[].lineId" type="integer" required>
+      Line identifier from the Special Odds endpoint.
+    </ParamField>
+    <ParamField body="bets[].specialId" type="integer" required>
+      Special market identifier from the Special Fixtures endpoint.
+    </ParamField>
+    <ParamField body="bets[].contestantId" type="integer" required>
+      Contestant identifier within the special market from the Special Fixtures endpoint.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Response
+
+```json
+{
+  "bets": [
+    {
+      "status": "ACCEPTED",
+      "betId": 760745142,
+      "uniqueRequestId": "10924e23-a2fe-4317-bffd-80504675f554",
+      "win": 9.55,
+      "risk": 10.50,
+      "price": -110,
+      "betterLineWasAccepted": false
+    }
+  ]
+}
+```
+
+<ResponseField name="bets" type="array">
+  Array of response objects, one per submitted bet.
+
+  <Expandable title="Response bet fields">
+    <ResponseField name="bets[].status" type="string" required>
+      `ACCEPTED` or `PROCESSED_WITH_ERROR`.
+    </ResponseField>
+    <ResponseField name="bets[].betId" type="integer">
+      Bet identifier. Present when `status` is `ACCEPTED`.
+    </ResponseField>
+    <ResponseField name="bets[].uniqueRequestId" type="string">
+      Echo of the `uniqueRequestId` from the request.
+    </ResponseField>
+    <ResponseField name="bets[].win" type="number">
+      Potential win amount. Present on `ACCEPTED` responses.
+    </ResponseField>
+    <ResponseField name="bets[].risk" type="number">
+      Risk amount. Present on `ACCEPTED` responses.
+    </ResponseField>
+    <ResponseField name="bets[].price" type="number">
+      Accepted odds price. Present on `ACCEPTED` responses.
+    </ResponseField>
+    <ResponseField name="bets[].betterLineWasAccepted" type="boolean">
+      `true` if the line moved in your favour and `acceptBetterLine` was `true`.
+    </ResponseField>
+    <ResponseField name="bets[].errorCode" type="string">
+      Present when `status` is `PROCESSED_WITH_ERROR`. Common values: `LINE_CHANGED`, `INSUFFICIENT_FUNDS`, `CONTEST_NOT_FOUND`, `DUPLICATED_REQUEST`, `PAST_CUTOFFTIME`, `BETTING_SUSPENDED`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Deduplication and error handling
+
+<Note>
+  Always generate a fresh UUID for each new bet. If a network failure or timeout prevents you from receiving a response, **reuse the same `uniqueRequestId`** when retrying — the API will return the result of the original request rather than placing a second bet. If the retry also returns an unexpected error, call `GET /v4/bets?uniqueRequestIds={uniqueRequestId}` to check whether the bet was placed. An empty response means the bet was not placed and you can safely submit a new one with a new UUID.
+</Note>
+
+<Tip>
+  For live events, always check the [GET /v4/bets/betting-status](/api/bets/betting-status) endpoint before placing bets during suspected maintenance windows. A `PENDING_ACCEPTANCE` response on a live bet is normal — the bet is queued and will resolve to `ACCEPTED` or `NOT_ACCEPTED` once the live delay period expires.
+</Tip>

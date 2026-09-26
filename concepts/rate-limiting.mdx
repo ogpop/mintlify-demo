@@ -1,0 +1,124 @@
+---
+title: 'Rate limits and fair use policy for the Pinnacle API'
+sidebarTitle: 'Rate Limiting'
+description: 'Understand the per-sport, per-endpoint rate limit of 1 request per 2 minutes, how to avoid 429 errors, and IP address restrictions for the Pinnacle API.'
+---
+
+The Pinnacle API enforces strict rate limits on all odds-related endpoints to ensure fair access and system stability for every client. Exceeding the allowed request rate results in a `429 Too Many Requests` error that blocks your next call until the window resets. Understanding these limits — and designing around them with the snapshot-delta pattern — lets you receive accurate, timely data without ever hitting the cap.
+
+## Rate-limited endpoints
+
+The following endpoints are subject to rate limiting:
+
+<CardGroup cols={2}>
+  <Card title="/v2/odds" icon="chart-line">
+    Current version of the straight-bet odds endpoint.
+  </Card>
+  <Card title="/v1/odds" icon="clock" color="#f97316">
+    Deprecated odds endpoint. Still rate-limited.
+  </Card>
+  <Card title="/v1/odds/special" icon="star">
+    Specials (props and futures) odds.
+  </Card>
+  <Card title="/v1/odds/parlay" icon="list">
+    Parlay odds endpoint.
+  </Card>
+  <Card title="/v1/line" icon="check">
+    Single-line price check before placing a bet.
+  </Card>
+  <Card title="/v1/line/special" icon="ticket">
+    Price check for specials.
+  </Card>
+  <Card title="/v1/line/parlay" icon="layer-group">
+    Parlay line validation.
+  </Card>
+</CardGroup>
+
+## The rate limit rule
+
+**1 request per 2 minutes, per endpoint, per `sportId`.**
+
+The limit is tracked independently for each combination of endpoint and sport. Polling soccer (`sportId=29`) does not consume quota for tennis (`sportId=33`), and calling `/v2/odds` does not consume quota for `/v1/line`.
+
+## The 429 response
+
+When you exceed the rate limit, the API returns:
+
+```http
+HTTP/1.1 429 Too Many Requests
+Content-Type: application/json
+
+{
+  "code": "TOO_MANY_REQUESTS",
+  "message": "Notice of Excessive Request Activity"
+}
+```
+
+The request is rejected entirely — no odds data is returned. You must wait until the 2-minute window resets before retrying the same endpoint and `sportId`.
+
+## Timeline example
+
+The following sequence shows three sports being polled in parallel, and what happens when the window is not respected for `sportId=29`:
+
+```
+2025-10-14T18:00:00Z  GET /v1/odds?sportId=29                        → 200 OK
+2025-10-14T18:00:01Z  GET /v1/odds?sportId=15                        → 200 OK
+2025-10-14T18:00:02Z  GET /v1/odds?sportId=3                         → 200 OK
+
+2025-10-14T18:01:02Z  GET /v1/odds?sportId=29&since=3301748841       → 429 Too Many Requests
+                      ↑ Only 62 seconds elapsed for sportId=29 — limit is 120 seconds
+
+2025-10-14T18:02:01Z  GET /v1/odds?sportId=29&since=3301748841       → 200 OK  ✓
+2025-10-14T18:02:02Z  GET /v1/odds?sportId=15&since=3301749826       → 200 OK  ✓
+2025-10-14T18:02:03Z  GET /v1/odds?sportId=3&since=33017511801       → 200 OK  ✓
+
+2025-10-14T18:04:02Z  GET /v1/odds?sportId=29&since=3301748841       → 200 OK  ✓
+2025-10-14T18:04:03Z  GET /v1/odds?sportId=15&leagueIds=4347,889&since=3301742786 → 200 OK  ✓
+2025-10-14T18:04:04Z  GET /v1/odds?sportId=3&since=33017511801       → 200 OK  ✓
+```
+
+Notice that `sportId=15` and `sportId=3` each have their own independent 2-minute window. You can stagger your polling across sports to stay within limits for every sport simultaneously.
+
+## Best practices
+
+<Note>
+  The snapshot-delta pattern (see [Snapshot & Delta](/concepts/snapshot-delta)) is specifically designed to fit within the 2-minute rate limit. A delta call returns only changes, so each call delivers maximum value.
+</Note>
+
+<Accordion title="Use snapshot + delta to stay within limits">
+  A snapshot call loads the full state; each subsequent delta call returns only changes since your last call. Because delta payloads are small and fast, you naturally avoid hammering the endpoint. Always issue your snapshot first, then poll with `since` no more frequently than once every 2 minutes per sport.
+</Accordion>
+
+<Accordion title="Batch all league IDs into a single request">
+  Do **not** call `/odds` or `/fixtures` in a loop for each league. If you need odds for leagues 4347 and 889 under the same sport, include both in one request:
+
+  ```
+  GET /v2/odds?sportId=15&leagueIds=4347&leagueIds=889&since=3301742786
+  ```
+
+  One request consumes one slot in the rate-limit window, regardless of how many `leagueIds` you include.
+</Accordion>
+
+<Accordion title="Cache the sports list — poll at most once per hour">
+  The `/sports` endpoint returns a list that rarely changes. You should call it **at most once every 60 minutes**. The `activeEvents` count it returns is obsolete and will eventually be removed — do not build logic that depends on it.
+</Accordion>
+
+<Accordion title="Use /line only before placing a bet">
+  The `/line` endpoint exists solely to confirm the exact price and limits immediately before you submit a bet. Do **not** call it in a loop to monitor prices — use `/v2/odds` with the delta pattern for that purpose. Looping on `/line` wastes rate-limit quota and may trigger the 429 response.
+</Accordion>
+
+## IP address restrictions
+
+Access to the entire Pinnacle API is restricted to a **maximum of 2 distinct IP addresses** per client account. Requests from a third IP address will be denied.
+
+<Warning>
+  If you deploy your integration across multiple servers or cloud regions, ensure all outbound API calls route through no more than 2 IP addresses. Contact Pinnacle support if you need to update your registered IP addresses.
+</Warning>
+
+## Fair use policy
+
+All API access is governed by Pinnacle's Fair Use Policy. Commercial use of the API without a written agreement with Pinnacle is not permitted and will result in permanent suspension of access. You must not sell, redistribute, or sublicense API data to any third party without prior written approval.
+
+<Note>
+  Review the full [Fair Use Policy](https://github.com/pinnacleapi/pinnacleapi-documentation/blob/master/FairUsePolicy.md) before building any application that exposes Pinnacle data to other users or systems.
+</Note>

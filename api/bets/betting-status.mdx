@@ -1,0 +1,81 @@
+---
+title: 'Check API and betting availability status'
+sidebarTitle: 'Betting Status'
+description: 'Use GET /v4/bets/betting-status to check whether the Pinnacle API is currently accepting bets before submitting wagers or handling unexpected errors.'
+---
+
+Before placing bets — especially during unusual hours or following unexpected errors — you can call `GET /v4/bets/betting-status` to confirm that the API is accepting wagers. Pinnacle occasionally disables betting during maintenance windows or temporarily closes live betting; this endpoint gives you a reliable single-field indicator of current availability.
+
+---
+
+## GET /v4/bets/betting-status
+
+Returns the current betting availability of the Pinnacle API. This endpoint takes no query parameters. Integrate it into your error-handling flow so that when a place-bet request returns `ALL_BETTING_CLOSED` or an unexpected error, you can distinguish a service-wide restriction from a bet-specific issue.
+
+### Request
+
+```bash
+curl -X GET 'https://api.pinnacle.com/v4/bets/betting-status' \
+  -H 'Authorization: Basic {base64credentials}' \
+  -H 'Accept: application/json'
+```
+
+### Response
+
+```json
+{
+  "status": "ALL_BETTING_ENABLED"
+}
+```
+
+<ResponseField name="status" type="string" required>
+  The current betting availability. One of:
+
+  | Value | Meaning |
+  |-------|---------|
+  | `ALL_BETTING_ENABLED` | The API is fully operational and accepting all bets |
+  | `ALL_LIVE_BETTING_CLOSED` | Pre-game betting is available but live betting is currently disabled |
+  | `ALL_BETTING_CLOSED` | All betting — both pre-game and live — is currently disabled |
+</ResponseField>
+
+<Note>
+  If you receive an `ALL_BETTING_CLOSED` or `ALL_LIVE_BETTING_CLOSED` errorCode on a place-bet response, call this endpoint to confirm whether the restriction is system-wide or specific to the individual market. A system-wide closure is typically temporary; poll this endpoint at a reasonable interval and resume placing bets once `ALL_BETTING_ENABLED` is returned.
+</Note>
+
+### HTTP status codes
+
+| Code | Meaning |
+|------|---------|
+| `200 OK` | Request succeeded; `status` field contains current availability |
+| `400 Bad Request` | Invalid request parameters |
+| `401 Unauthorized` | Missing or invalid `Authorization` header |
+| `403 Forbidden` | Account is inactive or lacks API access |
+| `500 Internal Server Error` | Unexpected server error; response includes a `ref` for support |
+
+### Error response shape
+
+When the API returns a non-200 status, the response body follows this structure:
+
+<Tabs>
+  <Tab title="400 / 401 / 403">
+    ```json
+    {
+      "code": "INVALID_CREDENTIALS",
+      "message": "Authorization failed."
+    }
+    ```
+  </Tab>
+  <Tab title="500">
+    ```json
+    {
+      "ref": "f5d9ba85-cc97-47a9-ad92-ea57d0ea2cc0",
+      "code": "UNEXPECTED_ERROR",
+      "message": "Internal error"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  Incorporate a call to this endpoint at startup and in your retry logic. If `status` is not `ALL_BETTING_ENABLED`, back off and poll rather than flooding the place-bet endpoints with requests that will fail.
+</Tip>

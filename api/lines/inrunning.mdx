@@ -1,0 +1,164 @@
+---
+title: 'Get in-running live event state — Lines API'
+sidebarTitle: 'In-Running'
+description: 'Track live event game state and elapsed time for all in-progress matches with GET /v1/inrunning to power real-time live betting workflows.'
+---
+
+When a match goes live, the game state changes rapidly — a soccer match transitions through first half, half time, second half, and potentially extra time and penalties. The `/v1/inrunning` endpoint gives you the current `state` integer and elapsed minutes for every active live event, letting you display an accurate game clock and gate your bet-placement logic on specific game states.
+
+<Note>
+  This endpoint is flagged **deprecated** in the Pinnacle OpenAPI specification. It currently covers live soccer events. Confirm current availability with your Pinnacle account manager before building production workflows that depend on this endpoint.
+</Note>
+
+---
+
+## GET /v1/inrunning
+
+Returns all live events that are currently in progress, organised by sport → league → event. No query parameters are required — the response always covers all sports for which in-running data is available.
+
+### No query parameters
+
+This endpoint requires no input parameters. Authenticate with HTTP Basic and call it directly.
+
+### Response fields
+
+<ResponseField name="sports" type="array">
+  Top-level container. Each entry represents a sport that has at least one event currently in progress.
+  <Expandable title="Sport object">
+    <ResponseField name="id" type="integer">
+      Sport ID. Matches the `id` values returned by `/v2/sports`.
+    </ResponseField>
+    <ResponseField name="leagues" type="array">
+      Leagues within this sport that have live events.
+      <Expandable title="League object">
+        <ResponseField name="id" type="integer">
+          League ID. Matches the `id` values returned by `/v2/leagues`.
+        </ResponseField>
+        <ResponseField name="events" type="array">
+          Live events currently in progress in this league.
+          <Expandable title="In-running event object">
+            <ResponseField name="id" type="integer">
+              Event ID. This is the **live** event ID — cross-reference with `/v1/fixtures` using the `parentId` field to link it to the corresponding pre-game parent event.
+            </ResponseField>
+            <ResponseField name="state" type="integer">
+              Integer representing the current game state. Full mapping:
+
+              | Value | Game state |
+              |-------|-----------|
+              | `1` | First half in progress |
+              | `2` | Half time in progress |
+              | `3` | Second half in progress |
+              | `4` | End of regular time |
+              | `5` | First half extra time in progress |
+              | `6` | Extra time half time in progress |
+              | `7` | Second half extra time in progress |
+              | `8` | End of extra time |
+              | `9` | End of game |
+              | `10` | Game temporarily suspended |
+              | `11` | Penalties in progress |
+            </ResponseField>
+            <ResponseField name="elapsed" type="integer">
+              Number of minutes elapsed in the current period or phase of the match.
+            </ResponseField>
+          </Expandable>
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl https://api.pinnacle.com/v1/inrunning \
+  -H "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  -H "Accept: application/json"
+```
+</CodeGroup>
+
+### Example response
+
+```json
+{
+  "sports": [
+    {
+      "id": 29,
+      "leagues": [
+        {
+          "id": 218153,
+          "events": [
+            { "id": 1563271334, "state": 3, "elapsed": 23 },
+            { "id": 1563271400, "state": 1, "elapsed": 38 },
+            { "id": 1563271501, "state": 10, "elapsed": 67 }
+          ]
+        },
+        {
+          "id": 2331,
+          "events": [
+            { "id": 837721686, "state": 2, "elapsed": 45 }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+In this example:
+- Event `1563271334` is in the **second half** (`state=3`) with 23 minutes elapsed.
+- Event `1563271400` is in the **first half** (`state=1`) with 38 minutes elapsed.
+- Event `1563271501` is **temporarily suspended** (`state=10`) at 67 minutes.
+- Event `837721686` is at **half time** (`state=2`), shown at 45 minutes.
+
+---
+
+## Correlating in-running events with fixtures
+
+Live events in the in-running response carry their own event ID, which differs from the pre-game event ID. To link them:
+
+1. Call `/v1/fixtures?sportId=29` (snapshot or delta).
+2. Find the live event (`liveStatus=1`) with the matching `id`.
+3. Read its `parentId` — that is the pre-game event's ID.
+
+```json
+{
+  "id": 1563271334,
+  "liveStatus": 1,
+  "parentId": 1560000001,
+  "home": "Arsenal",
+  "away": "Chelsea"
+}
+```
+
+<Note>
+  Parent events are always pre-game events (`liveStatus=0` or `liveStatus=2`) and never carry a `parentId` themselves. If you see more than one live event pointing to the same `parentId`, they differ in `resultingUnit` (e.g. `Regular` vs `Corners`) or represent different alternate-line offerings.
+</Note>
+
+---
+
+## Live betting workflow
+
+Combine `/v1/inrunning` with the rest of the Lines API for a complete live-betting integration:
+
+<Steps>
+  <Step title="Poll in-running state">
+    Call `/v1/inrunning` to get current `state` and `elapsed` values for all live events.
+  </Step>
+  <Step title="Fetch live odds">
+    Call `/v2/odds?sportId=29&isLive=1&since={last}` to get the latest prices for live events. Use the delta pattern to minimise payload size.
+  </Step>
+  <Step title="Cross-reference with fixtures">
+    Match live event IDs to pre-game parents using `parentId` from `/v1/fixtures` so you can display the correct team names and match metadata alongside live prices.
+  </Step>
+  <Step title="Check line before betting">
+    Before placing, call `/v1/line` with the live event's `eventId` to confirm the current price and obtain the `lineId`. Expect `NOT_EXISTS` responses more frequently for live events due to rapid price movements and period status changes.
+  </Step>
+  <Step title="Place and monitor the bet">
+    Submit the bet to the Bets API. Live bets enter a `PENDING_ACCEPTANCE` state during the ~6-second live delay. Poll `/bets?uniqueRequestIds={id}` until you receive `ACCEPTED` or `NOT_ACCEPTED`.
+  </Step>
+</Steps>
+
+<Tip>
+  Use `state=10` (temporarily suspended) as a signal to pause bet placement — the sportsbook has paused markets for this event and live-delay bets are more likely to be rejected during suspensions.
+</Tip>

@@ -1,0 +1,91 @@
+---
+title: 'Pinnacle API changelog — recent updates and changes'
+sidebarTitle: 'Changelog'
+description: 'A reverse-chronological log of all Pinnacle API updates, new features, deprecations, and end-of-life dates for endpoints and versions.'
+---
+
+This page tracks all notable changes to the Pinnacle API, listed in reverse chronological order. Check here before integrating new endpoints or upgrading existing implementations to stay ahead of deprecations and breaking changes.
+
+---
+
+## August 25, 2026
+
+<Warning>
+  **DEPRECATED — `/v1/fixtures/settled` and `/v1/fixtures/special/settled`**
+
+  Both endpoints reach **end of life on November 1, 2026** and will stop responding after that date. There is no replacement for either endpoint.
+</Warning>
+
+---
+
+## October 13, 2025
+
+<Warning>
+  **DEPRECATED — `/v1/odds`**
+
+  The `/v1/odds` endpoint is deprecated. **End of Life: January 1, 2026.** Migrate to `/v2/odds`.
+</Warning>
+
+<Warning>
+  **DEPRECATED — Bets API v3**
+
+  Bets API v3 is deprecated. **End of Life: January 1, 2026.** Migrate to Bets API v4.
+</Warning>
+
+**New features in this release:**
+
+- **FEATURE — `/v2/odds` endpoint:** Introduced the `/v2/odds` endpoint with support for team total alternate lines. Only the team total data mode has changed; all other aspects of the response model remain unchanged.
+- **FEATURE — Bets API v4:** Released Bets API v4. The main change is that place-bet responses no longer include full bet details. Use `/v4/bets?uniqueRequestIds` to retrieve bet details after placement.
+
+---
+
+## July 23, 2025
+
+- **UPDATE — Rate limiting:** Rate limiting rules have been updated. See the [Rate Limiting](/concepts/rate-limiting) page for current thresholds.
+
+---
+
+## April 19, 2024
+
+- **FEATURE — `max` property in `/odds/special`:** Documented the `max` property in the `/odds/special` response. This property exposes contestant-specific betting limits, giving you per-contestant max amounts alongside the standard market-level limits.
+
+---
+
+## November 18, 2022 — Lines API
+
+- **CHANGE — Soccer Extra Time markets:** Soccer Extra Time markets are now offered as periods of the parent live event rather than as distinct events. The following period mappings apply:
+
+| Period number | Market |
+|---|---|
+| `3` | Extra Time |
+| `6` | Penalty Shootout |
+| `7` | 1st Ten Shootout Pen |
+| `8` | To Qualify |
+| `39` | To Win Final |
+
+<Note>
+  Goals and red cards that occur during Extra Time are **only returned in Period 3**. Spread, Moneyline, Total, and Team Totals are priced in Period 3. Only Moneyline is available in Periods 6, 8, and 39. Only Total is available in Period 7.
+</Note>
+
+---
+
+## February 18, 2021
+
+<Warning>
+  **DEPRECATED — `/v1/line/parlay` and `/v1/bets/parlay`**
+
+  Both endpoints are deprecated. Migrate to `/v2/line/parlay` and `/v2/bets/parlay`. The transition to `/v2/bets/parlay` is seamless with no data contract changes. The transition to `/v2/line/parlay` requires small changes for parlay bets and additional changes for round-robin bets.
+</Warning>
+
+**New features in this release:**
+
+- **FEATURE — `max` property in `/v1/odds`:** Added the `max` property to the `/v1/odds` response to return alternate market-specific betting limits.
+- **FEATURE — `/v2/line/parlay` endpoint:** Added the `/v2/line/parlay` endpoint with support for round-robin limits.
+
+---
+
+## October 2017 — Bets API
+
+- **FEATURE — `fillType` property:** New `fillType` property gives you more flexibility when specifying stake amounts.
+- **FEATURE — `uniqueRequestId` pattern for live-delay bets:** When you place a bet on an event with live delay, the response does not include a `betId`. Use `uniqueRequestId` to poll `/v4/bets?uniqueRequestIds` to check acceptance status.
+- **CHANGE — `NOT_ACCEPTED` replaces `REJECTED`:** The `NOT_ACCEPTED` status replaces the former `REJECTED` status for declined bets.

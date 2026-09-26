@@ -1,0 +1,90 @@
+---
+title: 'Get your account balance — Customer API'
+sidebarTitle: 'Balance'
+description: 'Use GET /v1/client/balance to retrieve your available balance, outstanding bet exposure, given credit, and account currency via the Pinnacle Customer API.'
+---
+
+Before placing large bets, you should verify that your account holds sufficient funds. The `GET /v1/client/balance` endpoint returns your current available balance, the total value of open and unsettled bets (outstanding transactions), any credit extended to your account, and your account currency code. All monetary values are expressed in your account's base currency.
+
+---
+
+## GET /v1/client/balance
+
+Returns the current balance details for your authenticated account. This endpoint requires no query parameters — your credentials in the `Authorization` header identify the account.
+
+### Request
+
+```bash
+curl -X GET 'https://api.pinnacle.com/v1/client/balance' \
+  -H 'Authorization: Basic {base64credentials}' \
+  -H 'Accept: application/json'
+```
+
+Replace `{base64credentials}` with the Base64-encoded value of your `username:password` string. Your password must be no longer than 10 characters.
+
+### Response
+
+```json
+{
+  "availableBalance": 1250.50,
+  "outstandingTransactions": 340.00,
+  "givenCredit": 0.00,
+  "currency": "USD"
+}
+```
+
+<ResponseField name="availableBalance" type="number" required>
+  Funds currently available for betting, in your account currency. This reflects your balance minus any amounts already committed to open bets.
+</ResponseField>
+
+<ResponseField name="outstandingTransactions" type="number" required>
+  The sum of all open, unsettled bet stakes. Once bets settle, this amount is released back into (or deducted from) `availableBalance` based on the outcome.
+</ResponseField>
+
+<ResponseField name="givenCredit" type="number" required>
+  Credit extended to your account by Pinnacle. Returns `0.00` for standard accounts without a credit facility.
+</ResponseField>
+
+<ResponseField name="currency" type="string" required>
+  Your account's currency as an ISO 4217 code (e.g. `USD`, `EUR`, `GBP`, `CAD`). All monetary values in this response are expressed in this currency.
+</ResponseField>
+
+<Note>
+  `availableBalance` already accounts for open bets — it is your **net spendable funds**. The relationship between fields is: `availableBalance = totalBalance - outstandingTransactions + givenCredit`.
+</Note>
+
+### HTTP status codes
+
+| Code | Meaning |
+|------|---------|
+| `200 OK` | Request succeeded; balance details returned |
+| `400 Bad Request` | Invalid request parameters |
+| `401 Unauthorized` | Missing or invalid `Authorization` header |
+| `403 Forbidden` | Account is inactive or lacks API access |
+| `500 Internal Server Error` | Unexpected server error |
+
+### Error response shape
+
+<Tabs>
+  <Tab title="400 / 401 / 403">
+    ```json
+    {
+      "code": "INVALID_CREDENTIALS",
+      "message": "Authorization failed."
+    }
+    ```
+  </Tab>
+  <Tab title="500">
+    ```json
+    {
+      "ref": "f5d9ba85-cc97-47a9-ad92-ea57d0ea2cc0",
+      "code": "UNEXPECTED_ERROR",
+      "message": "Internal error"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  Poll this endpoint before submitting a large stake to confirm `availableBalance` is sufficient. If your balance is lower than expected, check `outstandingTransactions` — a high outstanding value means funds are tied up in open bets that have not yet settled.
+</Tip>

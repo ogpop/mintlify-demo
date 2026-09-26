@@ -1,13 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Pinnacle API",
+  "projectType": "api-service",
+  "projectName": "Pinnacle API",
+  "projectDescription": "A RESTful API suite for programmatic sports betting — covering lines, fixtures, odds, and bet placement across all sports and bet types.",
   "theme": "luma",
-  "colors": {
-    "primary": "#ef7025",
-    "light": "#eec9bc",
-    "dark": "#4fa1ab"
-  },
-  "favicon": "/favicon.svg",
+  "primaryColor": "#ef7025",
+  "lightColor": "#eec9bc",
+  "darkColor": "#4fa1ab",
   "navigation": {
     "tabs": [
       {
@@ -82,10 +80,39 @@
       }
     ]
   },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/pinnacleapi/pinnacleapi-documentation"
-    }
-  }
+  "keyFeatures": [
+    "Real-time odds and fixtures across all major sports",
+    "Straight, parlay, teaser, and special bet placement",
+    "Snapshot and delta polling for efficient odds updates",
+    "Live (in-running) betting with live-delay handling",
+    "Deduplication via uniqueRequestId to prevent duplicate bets",
+    "Alternate lines and round-robin parlay support",
+    "Per-sport rate limiting with clear 429 error responses",
+    "HTTP Basic authentication over HTTPS"
+  ],
+  "publicApiSurface": [
+    "GET /v1/fixtures",
+    "GET /v1/fixtures/special",
+    "GET /v1/fixtures/settled",
+    "GET /v2/odds",
+    "GET /v1/odds/teaser",
+    "GET /v1/odds/special",
+    "GET /v1/line",
+    "POST /v2/line/parlay",
+    "POST /v1/line/teaser",
+    "GET /v1/line/special",
+    "GET /v2/sports",
+    "GET /v2/leagues",
+    "GET /v1/periods",
+    "GET /v1/inrunning",
+    "GET /v1/teaser/groups",
+    "GET /v2/currencies",
+    "GET /v1/cancellationreasons",
+    "POST /v4/bets/straight",
+    "POST /v4/bets/parlay",
+    "POST /v4/bets/special",
+    "GET /v4/bets",
+    "GET /v4/bets/betting-status",
+    "GET /v1/client/balance"
+  ]
 }

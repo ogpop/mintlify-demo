@@ -1,0 +1,55 @@
+---
+title: 'Pinnacle API: Bet programmatically on any sport'
+sidebarTitle: 'Introduction'
+description: 'Pinnacle API is a RESTful sports betting service covering every sport and bet type. Learn what it offers, how it works, and how to get access.'
+---
+
+Pinnacle API gives you programmatic access to Pinnacle's full sportsbook — every sport, every market, every bet type — over a clean RESTful interface. You send JSON over HTTPS and get JSON back. Whether you're building an automated trading system, a commercial data feed, or a bespoke handicapping tool, the API provides the real-time lines, fixture data, and bet-placement endpoints you need to operate at scale.
+
+## What's Included
+
+The API surface is split into three focused sub-APIs, each versioned independently:
+
+- **Lines API** — Retrieve sports, leagues, fixtures, and odds. Supports snapshot and delta polling so you receive only changed data after your first call. Covers straight, parlay, teaser, and special markets.
+- **Bets API** — Place and manage bets across all supported types. Returns bet status, settlement details, and full wager history.
+- **Customer API** — Access account-level information including available balance and currency settings.
+
+## Base URL
+
+All endpoints share a single base URL:
+
+```
+https://api.pinnacle.com
+```
+
+Every request must be made over HTTPS. Plain HTTP is not supported.
+
+## Data Conventions
+
+The API enforces a small set of conventions across every endpoint:
+
+- **Format** — JSON only. Set `Accept: application/json` on every request; POST requests also require `Content-Type: application/json`.
+- **Date and time** — All timestamps are in GMT and follow ISO 8601 format (e.g., `2024-11-15T18:30:00Z`).
+- **Compression** — HTTP compression is supported and strongly recommended. Set a `User-Agent` header to ensure compression is applied.
+
+## Getting Access
+
+API access requires a funded Pinnacle account. To apply, send a short description of your use case to [api@pinnacle.com](mailto:api@pinnacle.com) — the team will respond with available options.
+
+<Note>
+  Access to the Pinnacle API is not open to the general public. Since July 23rd, 2025, Pinnacle has offered bespoke data services for select high-value bettors and commercial partnerships, and also supports academics and pregame handicapping projects. If you believe your use case qualifies, reach out to [api@pinnacle.com](mailto:api@pinnacle.com).
+</Note>
+
+## Where to Go Next
+
+<CardGroup cols={3}>
+  <Card title="Authentication" icon="lock" href="/authentication">
+    Set up HTTP Basic auth and configure required headers before making your first request.
+  </Card>
+  <Card title="Quick Start" icon="rocket" href="/getting-started">
+    Follow the end-to-end flow from listing sports to placing and confirming your first bet.
+  </Card>
+  <Card title="Sports & Leagues" icon="list" href="/api/lines/sports-leagues">
+    Explore the Lines API reference for retrieving available sports and leagues.
+  </Card>
+</CardGroup>

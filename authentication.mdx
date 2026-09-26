@@ -1,0 +1,86 @@
+---
+title: 'Authenticate with the Pinnacle API using HTTP Basic'
+sidebarTitle: 'Authentication'
+description: 'Pinnacle API uses HTTP Basic auth over HTTPS. Learn how to build the Authorization header, set required data format headers, and handle auth errors.'
+---
+
+Pinnacle API authenticates every request using HTTP Basic access authentication. You encode your credentials as a Base64 string and pass them in the `Authorization` header on each call. Because credentials travel with every request, you must always use HTTPS — sending requests over plain HTTP is not supported and will result in a connection failure.
+
+## Building the Authorization Header
+
+The `Authorization` header follows the standard HTTP Basic format:
+
+```
+Authorization: Basic <Base64 value of UTF-8 encoded "username:password">
+```
+
+A real header looks like this:
+
+```
+Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1
+```
+
+To generate the Base64 string from your credentials, run the following in your terminal:
+
+```bash
+echo -n "username:password" | base64
+```
+
+Replace `username` and `password` with your actual Pinnacle account credentials. The `-n` flag prevents a trailing newline from being included in the encoded output — omitting it produces an invalid token.
+
+<Note>
+  Your password can be a maximum of **10 characters** long. Passwords longer than 10 characters will cause authentication to fail.
+</Note>
+
+## Full cURL Example
+
+The following example shows a complete authenticated request to retrieve available sports:
+
+```bash
+curl --request GET \
+  --url "https://api.pinnacle.com/v2/sports" \
+  --header "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  --header "Accept: application/json" \
+  --header "User-Agent: MyBettingApp/1.0"
+```
+
+## Required Headers
+
+Every request to the Pinnacle API must include specific headers beyond `Authorization`. Missing headers are a common source of `400 Bad Request` errors.
+
+| Header | Required on | Value |
+|---|---|---|
+| `Authorization` | All requests | `Basic <base64-credentials>` |
+| `Accept` | All requests | `application/json` |
+| `Content-Type` | POST requests only | `application/json` |
+| `User-Agent` | All requests | Your application name and version |
+
+POST request bodies must be valid JSON. The API does not accept form-encoded data.
+
+## Compression
+
+The API supports HTTP compression and you should use it on every request. Compressed responses are significantly smaller, which reduces latency and bandwidth consumption — especially important when polling odds endpoints frequently.
+
+<Tip>
+  Set the `User-Agent` header on all your requests. Without it, HTTP compression may not be applied by the server, negating a meaningful performance advantage.
+</Tip>
+
+## TLS Requirements
+
+The API enforces modern TLS versions. Only the following are supported:
+
+- **TLS 1.2** (preferred)
+- **TLS 1.1**
+
+Connections using TLS 1.0 or SSL will be rejected. Verify that your HTTP client or language runtime is configured to use TLS 1.2 by default.
+
+## Authentication Errors
+
+| HTTP Status | Meaning | Common Cause |
+|---|---|---|
+| `401 Unauthorized` | The credentials in the `Authorization` header are invalid. | Incorrect username or password; malformed Base64 encoding; password exceeds 10 characters; missing `Authorization` header entirely. |
+| `403 Forbidden` | The credentials are valid but the account lacks permission to access the API. | Account is not funded; API access has been revoked; attempting to access Esports without special authorization. |
+
+<Warning>
+  A `401` response does not mean your account is blocked — it means the server could not verify your identity. Double-check that your Base64 string encodes the literal string `username:password` with no trailing newline and no extra whitespace.
+</Warning>

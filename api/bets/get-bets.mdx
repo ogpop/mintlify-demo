@@ -1,0 +1,351 @@
+---
+title: 'Retrieve bets and bet history — Bets API v4'
+sidebarTitle: 'Get Bets'
+description: 'Use GET /v4/bets to retrieve straight, parlay, teaser, and special bet history. Filter by status, date range, or IDs; poll live bets via uniqueRequestId.'
+---
+
+The `GET /v4/bets` endpoint is your primary tool for retrieving placed bets and their current status. You can query by a list of bet IDs, by `uniqueRequestId` values from your place-bet requests, or by date range with a bet-list filter. Responses are paginated and include all bet types — straight, parlay, teaser, special, and manual — in separate arrays within a single response object.
+
+<Note>
+  Querying by `uniqueRequestIds` is supported **only for straight and special bets** and only within **30 minutes** of placement. For older bets or parlay/teaser bets, query by `betIds` or date range instead.
+</Note>
+
+---
+
+## GET /v4/bets
+
+Returns bet history filtered by your query parameters. When you supply `betIds` or `uniqueRequestIds`, all other parameters are ignored. When querying by date range, you must also supply a `betlist` value; running bets are filtered by `placedAt`, while settled bets are filtered by `settledAt`.
+
+### Request
+
+<Tabs>
+  <Tab title="By uniqueRequestId (live-delay polling)">
+    ```bash
+    curl -X GET 'https://api.pinnacle.com/v4/bets?uniqueRequestIds=86a90ab9-fca1-4703-a11c-ce329a85584e' \
+      -H 'Authorization: Basic {base64credentials}' \
+      -H 'Accept: application/json'
+    ```
+  </Tab>
+  <Tab title="By bet IDs">
+    ```bash
+    curl -X GET 'https://api.pinnacle.com/v4/bets?betIds=775856112,775856113,775856114' \
+      -H 'Authorization: Basic {base64credentials}' \
+      -H 'Accept: application/json'
+    ```
+  </Tab>
+  <Tab title="Running bets by date range">
+    ```bash
+    curl -X GET 'https://api.pinnacle.com/v4/bets?betlist=RUNNING&fromDate=2017-11-21T00:00:00Z&toDate=2017-11-29T00:00:00Z' \
+      -H 'Authorization: Basic {base64credentials}' \
+      -H 'Accept: application/json'
+    ```
+  </Tab>
+  <Tab title="Settled bets by date range">
+    ```bash
+    curl -X GET 'https://api.pinnacle.com/v4/bets?betlist=SETTLED&fromDate=2017-11-20T00:00:00Z&toDate=2017-11-23T00:00:00Z' \
+      -H 'Authorization: Basic {base64credentials}' \
+      -H 'Accept: application/json'
+    ```
+  </Tab>
+</Tabs>
+
+### Query parameters
+
+<ParamField query="betIds" type="array">
+  A comma-separated list of numeric bet IDs. Maximum of 100 IDs. Works for all non-settled bets and for bets settled within the last 30 days. When supplied, all other parameters are ignored.
+
+  Example: `?betIds=775856112,775856113,775856114`
+</ParamField>
+
+<ParamField query="uniqueRequestIds" type="array">
+  A comma-separated list of `uniqueRequestId` values from your place-bet requests. Maximum of 10 IDs. When supplied, all other parameters are ignored. Use this to check the status of a live-delay bet or to verify placement after a network failure.
+
+  Example: `?uniqueRequestIds=86a90ab9-fca1-4703-a11c-ce329a85584e`
+</ParamField>
+
+<ParamField query="betlist" type="string">
+  Required when querying by date range. One of:
+
+  | Value | Filters by |
+  |-------|-----------|
+  | `RUNNING` | Open, unsettled bets — queried by `placedAt` |
+  | `SETTLED` | Settled bets — queried by `settledAt` |
+  | `ALL` | All bets |
+</ParamField>
+
+<ParamField query="betStatuses" type="array">
+  Optional additional filter on bet status. Works only in conjunction with `betlist`. Comma-separated values: `WON`, `LOSE`, `CANCELLED`, `REFUNDED`, `NOT_ACCEPTED`, `ACCEPTED`, `PENDING_ACCEPTANCE`.
+
+  Example: `?betList=SETTLED&betStatuses=CANCELLED`
+</ParamField>
+
+<ParamField query="fromDate" type="string">
+  Start of the date range in ISO 8601 format. Required when `betlist` is supplied. Can be a date (`2017-11-21`) or date-time (`2017-11-21T00:00:00Z`). Maximum 30 days in the past.
+</ParamField>
+
+<ParamField query="toDate" type="string">
+  End of the date range in ISO 8601 format. Required when `betlist` is supplied. This value is **exclusive** — it cannot equal `fromDate`.
+</ParamField>
+
+<ParamField query="sortDir" type="string">
+  Sort direction for date-range queries. `ASC` (default) or `DESC`. Only respected when querying by date range.
+</ParamField>
+
+<ParamField query="pageSize" type="integer">
+  Number of records per page. Maximum 1000. Default 1000. Only respected when querying by date range.
+</ParamField>
+
+<ParamField query="fromRecord" type="integer">
+  Zero-based starting record for pagination. Default 0. To fetch the next page, set this to `toRecord + 1` from the previous response.
+</ParamField>
+
+<ParamField query="betType" type="array">
+  Filter by one or more bet types. Comma-separated values: `SPREAD`, `MONEYLINE`, `TOTAL_POINTS`, `TEAM_TOTAL_POINTS`, `SPECIAL`, `PARLAY`, `TEASER`, `MANUAL`.
+</ParamField>
+
+### Response
+
+The response contains separate arrays for each bet type. Only arrays with matching bets are populated; empty arrays may be omitted from the response.
+
+<Tabs>
+  <Tab title="PENDING_ACCEPTANCE">
+    ```json
+    {
+      "straightBets": [
+        {
+          "uniqueRequestId": "86a90ab9-fca1-4703-a11c-ce329a85584e",
+          "betStatus": "PENDING_ACCEPTANCE"
+        }
+      ]
+    }
+    ```
+  </Tab>
+  <Tab title="NOT_ACCEPTED">
+    ```json
+    {
+      "straightBets": [
+        {
+          "uniqueRequestId": "86a90ab9-fca1-4703-a11c-ce329a85584e",
+          "betStatus": "NOT_ACCEPTED"
+        }
+      ]
+    }
+    ```
+  </Tab>
+  <Tab title="ACCEPTED (full)">
+    ```json
+    {
+      "straightBets": [
+        {
+          "betId": 800110193,
+          "uniqueRequestId": "86a90ab9-fca1-4703-a11c-ce329a85584e",
+          "wagerNumber": 1,
+          "placedAt": "2017-12-20T21:57:22Z",
+          "betStatus": "ACCEPTED",
+          "betType": "MONEYLINE",
+          "win": 2519.25,
+          "risk": 11991.63,
+          "oddsFormat": "AMERICAN",
+          "updateSequence": 111548915,
+          "sportId": 29,
+          "leagueId": 5595,
+          "eventId": 799939900,
+          "price": -476,
+          "teamName": "Universitario",
+          "team1": "Universitario",
+          "team2": "Club Petrolero",
+          "periodNumber": 0,
+          "isLive": true,
+          "eventStartTime": "2017-12-20T19:00:00Z"
+        }
+      ]
+    }
+    ```
+  </Tab>
+  <Tab title="Paginated response">
+    ```json
+    {
+      "moreAvailable": true,
+      "pageSize": 1000,
+      "fromRecord": 0,
+      "toRecord": 999,
+      "straightBets": [...],
+      "parlayBets": [...],
+      "teaserBets": [...],
+      "specialBets": [...]
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Response fields
+
+<ResponseField name="moreAvailable" type="boolean">
+  `true` when there are additional pages of results. Fetch the next page by incrementing `fromRecord` to `toRecord + 1`.
+</ResponseField>
+
+<ResponseField name="pageSize" type="integer">
+  Number of records returned in this page.
+</ResponseField>
+
+<ResponseField name="fromRecord" type="integer">
+  Zero-based index of the first record in this response.
+</ResponseField>
+
+<ResponseField name="toRecord" type="integer">
+  Zero-based index of the last record in this response.
+</ResponseField>
+
+<ResponseField name="straightBets" type="array">
+  Array of straight bet objects.
+
+  <Expandable title="Straight bet fields">
+    <ResponseField name="betId" type="integer" required>
+      Bet identifier.
+    </ResponseField>
+    <ResponseField name="uniqueRequestId" type="string">
+      The `uniqueRequestId` from the original place-bet request.
+    </ResponseField>
+    <ResponseField name="wagerNumber" type="integer" required>
+      Wager number within the bet. API-placed bets always return `1`.
+    </ResponseField>
+    <ResponseField name="placedAt" type="string" required>
+      ISO 8601 date-time when the bet was placed.
+    </ResponseField>
+    <ResponseField name="betStatus" type="string" required>
+      Current status of the bet.
+
+      | Value | Meaning |
+      |-------|---------|
+      | `ACCEPTED` | Bet accepted and open |
+      | `PENDING_ACCEPTANCE` | Live bet awaiting resolution of live delay |
+      | `NOT_ACCEPTED` | Live bet was rejected after the live delay period |
+      | `CANCELLED` | Bet cancelled per Pinnacle rules |
+      | `PUSHED` | Bet pushed |
+      | `REFUNDED` | Bet refunded (event cancelled or pushed) |
+      | `WON` | Bet settled as won |
+      | `LOST` | Bet settled as lost |
+      | `HALF_WON_HALF_PUSHED` | Asian handicap — half won, half pushed |
+      | `HALF_LOST_HALF_PUSHED` | Asian handicap — half lost, half pushed |
+    </ResponseField>
+    <ResponseField name="betType" type="string" required>
+      Bet type: `MONEYLINE`, `SPREAD`, `TOTAL_POINTS`, or `TEAM_TOTAL_POINTS`.
+    </ResponseField>
+    <ResponseField name="win" type="number" required>
+      Potential win amount.
+    </ResponseField>
+    <ResponseField name="risk" type="number" required>
+      Risk amount.
+    </ResponseField>
+    <ResponseField name="winLoss" type="number">
+      Net win/loss amount. Populated for settled bets only.
+    </ResponseField>
+    <ResponseField name="oddsFormat" type="string" required>
+      Odds format used for this bet.
+    </ResponseField>
+    <ResponseField name="updateSequence" type="integer" required>
+      Monotonically increasing sequence number. Use this to detect updates.
+    </ResponseField>
+    <ResponseField name="sportId" type="integer">
+      Sport identifier.
+    </ResponseField>
+    <ResponseField name="leagueId" type="integer">
+      League identifier.
+    </ResponseField>
+    <ResponseField name="eventId" type="integer">
+      Event identifier.
+    </ResponseField>
+    <ResponseField name="handicap" type="number">
+      Spread or total value. Present for `SPREAD`, `TOTAL_POINTS`, and `TEAM_TOTAL_POINTS` bets.
+    </ResponseField>
+    <ResponseField name="price" type="number">
+      Accepted odds price in the requested `oddsFormat`.
+    </ResponseField>
+    <ResponseField name="teamName" type="string">
+      Name of the team or side selected.
+    </ResponseField>
+    <ResponseField name="side" type="string">
+      `OVER` or `UNDER`. Present for totals bets.
+    </ResponseField>
+    <ResponseField name="team1" type="string">
+      Name of Team 1 (home team unless league mapping differs).
+    </ResponseField>
+    <ResponseField name="team2" type="string">
+      Name of Team 2 (away team unless league mapping differs).
+    </ResponseField>
+    <ResponseField name="periodNumber" type="integer">
+      Period the bet was placed on. `0` = full game.
+    </ResponseField>
+    <ResponseField name="team1Score" type="number">
+      Team 1 score at the time of placement. Live bets only.
+    </ResponseField>
+    <ResponseField name="team2Score" type="number">
+      Team 2 score at the time of placement. Live bets only.
+    </ResponseField>
+    <ResponseField name="ftTeam1Score" type="number">
+      Full-time Team 1 score. Settled bets only.
+    </ResponseField>
+    <ResponseField name="ftTeam2Score" type="number">
+      Full-time Team 2 score. Settled bets only.
+    </ResponseField>
+    <ResponseField name="pTeam1Score" type="number">
+      End-of-period Team 1 score. Settled bets only. `null` when `periodNumber` is `0`.
+    </ResponseField>
+    <ResponseField name="pTeam2Score" type="number">
+      End-of-period Team 2 score. Settled bets only. `null` when `periodNumber` is `0`.
+    </ResponseField>
+    <ResponseField name="isLive" type="boolean">
+      `true` if the bet was placed on a live event.
+    </ResponseField>
+    <ResponseField name="eventStartTime" type="string">
+      ISO 8601 date-time of the event start.
+    </ResponseField>
+    <ResponseField name="customerCommission" type="number">
+      Commission charged on this bet, if applicable.
+    </ResponseField>
+    <ResponseField name="cancellationReason" type="object">
+      Present for cancelled bets. Contains a `code` (e.g. `FBS_CW_227`) and a `details` array of key-value pairs describing the reason (e.g. `correctSpread: -1.5`).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="parlayBets" type="array">
+  Array of parlay bet objects, including legs, combined odds, and per-leg status.
+</ResponseField>
+
+<ResponseField name="teaserBets" type="array">
+  Array of teaser bet objects, including teaser name, pick count, and leg details.
+</ResponseField>
+
+<ResponseField name="specialBets" type="array">
+  Array of special (prop/futures) bet objects, including `specialId`, `contestantId`, and `contestantName`.
+</ResponseField>
+
+<ResponseField name="manualBets" type="array">
+  Array of manually placed bets (created by Pinnacle staff on your behalf).
+</ResponseField>
+
+---
+
+## Live-delay bet polling
+
+When you place a bet on a live event and receive `PENDING_ACCEPTANCE` in the place-bet response (with no `betId`), the bet is queued in a live-delay window. Poll `GET /v4/bets?uniqueRequestIds={yourUniqueRequestId}` at a reasonable interval (e.g. every 5 seconds) until the status changes to `ACCEPTED` or `NOT_ACCEPTED`.
+
+<Warning>
+  The `RUNNING` bet list **does not** include bets currently in `PENDING_ACCEPTANCE` or `NOT_ACCEPTED` status. You must query by `uniqueRequestIds` to check the resolution of a live-delay bet within the 30-minute window.
+</Warning>
+
+```bash
+# Poll until status is no longer PENDING_ACCEPTANCE
+curl -X GET 'https://api.pinnacle.com/v4/bets?uniqueRequestIds=86a90ab9-fca1-4703-a11c-ce329a85584e' \
+  -H 'Authorization: Basic {base64credentials}' \
+  -H 'Accept: application/json'
+```
+
+The response will progress through these states:
+
+| State | Meaning |
+|-------|---------|
+| `PENDING_ACCEPTANCE` | Still in live-delay window — continue polling |
+| `ACCEPTED` | Bet was accepted; full bet details now present |
+| `NOT_ACCEPTED` | Bet was rejected after the live delay |
