@@ -1,5 +1,5 @@
 ---
-title: 'Place a straight bet with the Pinnacle API'
+title: 'Straight Bets: Four-Step Flow with the Pinnacle API'
 sidebarTitle: 'Straight Bets'
 description: 'Follow the four-step flow — get fixtures, fetch odds, check the line, and place your bet — to submit a straight wager via the Pinnacle API.'
 ---
@@ -156,7 +156,7 @@ Straight bets are single-outcome wagers covering spread, moneyline, totals, and 
     ```bash
     curl -u username:password \
       "https://api.pinnacle.com/v1/line?sportId=29&leagueId=2331&eventId=834342247\
-    &periodNumber=0&betType=SPREAD&team=Team1&handicap=-0.25&oddsFormat=American"
+    &periodNumber=0&betType=SPREAD&team=TEAM1&handicap=-0.25&oddsFormat=American"
     ```
 
     A successful response looks like:
@@ -197,7 +197,7 @@ Straight bets are single-outcome wagers covering spread, moneyline, totals, and 
     | `eventId` | Yes | From the odds response (`event.id`). |
     | `periodNumber` | Yes | From `period.number`. |
     | `betType` | Yes | `SPREAD`, `MONEYLINE`, `TOTAL_POINTS`, or `TEAM_TOTAL_POINTS`. |
-    | `team` | Conditional | `Team1`, `Team2`, or `Draw`. Required for SPREAD, MONEYLINE, TEAM_TOTAL_POINTS. |
+    | `team` | Conditional | `TEAM1`, `TEAM2`, or `DRAW`. Required for SPREAD, MONEYLINE, TEAM_TOTAL_POINTS. |
     | `side` | Conditional | `OVER` or `UNDER`. Required for TOTAL_POINTS and TEAM_TOTAL_POINTS. |
     | `handicap` | Conditional | `spread.hdp`, `total.points`, or team total points. Required for SPREAD, TOTAL_POINTS, TEAM_TOTAL_POINTS. |
     | `lineId` | Yes | From `period.lineId`. |
@@ -219,7 +219,7 @@ Straight bets are single-outcome wagers covering spread, moneyline, totals, and 
     | `leagueId` | `league.id` |
     | `eventId` | `event.id` |
     | `periodNumber` | `period.number` |
-    | `team` | Determined by `homeTeamType` from `/v2/leagues`. If `homeTeamType=Team1` and you want the away team, set `team=Team2`. For a draw, set `team=Draw`. |
+    | `team` | Determined by `homeTeamType` from `/v2/leagues`. If `homeTeamType=Team1` and you want the away team, set `team=TEAM2`. For a draw, set `team=DRAW`. |
     | `handicap` | `spread.hdp` / `total.points` / `teamTotal.points` |
     | `lineId` | `period.lineId` |
     | `altLineId` | `spread.altLineId` or `total.altLineId` |
@@ -241,7 +241,7 @@ Straight bets are single-outcome wagers covering spread, moneyline, totals, and 
         "eventId": 834342247,
         "periodNumber": 0,
         "betType": "MONEYLINE",
-        "team": "Team1",
+        "team": "TEAM1",
         "lineId": 527557614,
         "altLineId": null,
         "fillType": "NORMAL",
@@ -263,7 +263,7 @@ Straight bets are single-outcome wagers covering spread, moneyline, totals, and 
       "eventId": 834342247,
       "periodNumber": 0,
       "betType": "SPREAD",
-      "team": "Team1",
+      "team": "TEAM1",
       "handicap": -0.5,
       "lineId": 527557614,
       "altLineId": 527557700,

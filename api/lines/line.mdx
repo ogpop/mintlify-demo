@@ -1,7 +1,7 @@
 ---
-title: 'Check a line before placing — Pinnacle Lines API'
+title: 'Validate a Line Before Betting — Pinnacle Lines API'
 sidebarTitle: 'Line Check'
-description: 'Validate the exact current price and stake limits for any selection before submitting a bet using GET /v1/line and related endpoints.'
+description: 'Validate prices and stake limits for straight, parlay, teaser, and special bets using GET /v1/line and related line-check endpoints.'
 ---
 
 Before you submit a place-bet request, use the line-check endpoints to confirm the current price and the exact stake limits for your selection. This is especially important for live events, where prices and period status can change in seconds. The `/v1/line` endpoint returns the `lineId` you must include in your bet request, as well as precise `minRiskStake`, `maxRiskStake`, `minWinStake`, and `maxWinStake` values scoped to your account and the current market state.
@@ -50,8 +50,8 @@ Returns the current price and stake limits for a single straight-bet selection.
   Required for `SPREAD`, `TOTAL_POINTS`, and `TEAM_TOTAL_POINTS`. Must exactly match the `hdp` or `points` value from `/v2/odds` — including the correct decimal precision. A mismatch returns `NOT_EXISTS`.
 </ParamField>
 
-<ParamField query="oddsFormat" type="string" optional>
-  Format for the returned price: `AMERICAN` (default), `DECIMAL`, `HONGKONG`, `INDONESIAN`, or `MALAY`.
+<ParamField query="oddsFormat" type="string" required>
+  Format for the returned price: `American`, `Decimal`, `HongKong`, `Indonesian`, or `Malay`.
 </ParamField>
 
 <ParamField query="altLineId" type="integer" optional>
@@ -65,11 +65,8 @@ Returns the current price and stake limits for a single straight-bet selection.
 
   | Value | Meaning |
   |-------|---------|
-  | `SUCCESS` | Line is valid; price and limits are in the response. |
-  | `NOT_EXISTS` | The line does not exist with the parameters you sent. See common causes below. |
-  | `OFFLINE` | The period is temporarily unavailable (`status=2`). |
-  | `VALID_FOR_PARLAY_ONLY` | The selection can only be used as part of a parlay. |
-  | `RESPONSIBLE_GAMBLING_ONLY` | The line is restricted to responsible-gambling limits for your account. |
+  | `SUCCESS` | Line is valid; current price and stake limits are in the response. |
+  | `NOT_EXISTS` | The line does not exist for the parameters you supplied. This covers cases where the period is offline, the cutoff has passed, the handicap or side has moved, or the selection simply isn't offered. See common causes below. |
 </ResponseField>
 
 <ResponseField name="price" type="number">
@@ -193,7 +190,7 @@ Validates a set of parlay legs and returns the available round-robin options wit
 ### Request body fields
 
 <ParamField body="oddsFormat" type="string" optional>
-  Format for returned odds. One of: `AMERICAN`, `DECIMAL`, `HONGKONG`, `INDONESIAN`, `MALAY`.
+  Format for returned odds. One of: `American`, `Decimal`, `HongKong`, `Indonesian`, or `Malay`.
 </ParamField>
 
 <ParamField body="legs" type="array" required>
@@ -284,7 +281,7 @@ Validates a teaser bet before submission and returns the combined price and adju
 </ParamField>
 
 <ParamField body="oddsFormat" type="string" required>
-  Price format: `AMERICAN`, `DECIMAL`, `HONGKONG`, `INDONESIAN`, or `MALAY`.
+  Price format: `American`, `Decimal`, `HongKong`, `Indonesian`, or `Malay`.
 </ParamField>
 
 <ParamField body="legs" type="array" required>
@@ -326,7 +323,7 @@ Validates a special (prop/futures) bet before submission and returns the current
 </ParamField>
 
 <ParamField query="oddsFormat" type="string" required>
-  Price format: `AMERICAN`, `DECIMAL`, `HONGKONG`, `INDONESIAN`, or `MALAY`.
+  Price format: `American`, `Decimal`, `HongKong`, `Indonesian`, or `Malay`.
 </ParamField>
 
 <ParamField query="handicap" type="integer" optional>

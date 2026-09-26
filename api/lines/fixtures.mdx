@@ -1,7 +1,7 @@
 ---
-title: 'Get fixtures and settled results — Lines API'
+title: 'Fixtures and Specials — Pinnacle Lines API Reference'
 sidebarTitle: 'Fixtures'
-description: 'Fetch live and pre-game event data with snapshot/delta support, parentId grouping, and specials for all sports via GET /v1/fixtures.'
+description: 'Fetch live and pre-game event data with snapshot and delta support, parentId grouping, specials, and deprecation notes for GET /v1/fixtures.'
 ---
 
 Fixtures are the building blocks of every bet — they carry team names, start times, live status, and the event IDs you need to look up odds and place bets. The `/v1/fixtures` endpoint supports both snapshot (full state) and delta (incremental changes) modes, so you can seed your local data store with one snapshot call and then keep it in sync with lightweight delta calls. Use `parentId` to link live events back to their pre-game counterparts and to correlate corner markets and other derivative events to the same underlying match.

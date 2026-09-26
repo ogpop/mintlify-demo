@@ -1,5 +1,5 @@
 ---
-title: 'Pinnacle API frequently asked questions'
+title: 'Pinnacle API FAQ — common integration questions answered'
 sidebarTitle: 'FAQ'
 description: 'Answers to common Pinnacle API questions covering teams, events, markets, bet placement, errors, rate limits, and currency handling.'
 ---
@@ -168,6 +168,15 @@ This page answers the most common questions developers encounter when integratin
     - **Home team** (`price = 1.819 < 2`): `maxRisk = 250 / (1.819 - 1) = 250 / 0.819 ≈ 305`
   </Accordion>
 
+  <Accordion title="How do I calculate round robin max stake?">
+    To find the maximum round robin stake, use the parameters returned by the `/v2/line/parlay` endpoint and follow these four steps:
+
+    1. `maxRiskStakeBasedOnMaxTotalRisk = maxRoundRobinTotalRisk / SUM(numberOfBets)`, where `SUM(numberOfBets)` is the sum of `numberOfBets` across all selected round robin options.
+    2. `maxRiskStakeBasedOnMaxTotalWin = maxRoundRobinTotalWin / SUM(unroundedDecimalOdds - 1)`, where `SUM(unroundedDecimalOdds - 1)` is the sum of `unroundedDecimalOdds - 1` across all selected round robin options.
+    3. `maxRoundRobinRiskStake = Min(maxRiskStakeBasedOnMaxTotalRisk, maxRiskStakeBasedOnMaxTotalWin)`
+    4. Round `maxRoundRobinRiskStake` to 2 decimal places, away from zero.
+  </Accordion>
+
   <Accordion title="How do you calculate max bet amounts for non-USD currencies?">
     Pinnacle uses exchange rates from [oanda.com](https://www.oanda.com), updated every 24 hours. For non-USD currencies, the converted amount is **rounded down to the nearest integer**. For example, a maximum bet of £345.23 becomes £345.
   </Accordion>
@@ -212,7 +221,7 @@ This page answers the most common questions developers encounter when integratin
     If the bet is **accepted**, the full bet object is returned including `betId`, `win`, `risk`, and all market details.
 
     <Note>
-      Pinnacle stops returning responses for a given `uniqueRequestId` 30 minutes after placement, due to cache cleanup.
+      Pinnacle stops returning responses for a given `uniqueRequestId` 30 minutes after placement, due to cache cleanup. Also note that the `RUNNING` bet list does **not** return live-delay bets that are in `PENDING_ACCEPTANCE` or `NOT_ACCEPTED` status — use `uniqueRequestIds` polling instead.
     </Note>
   </Accordion>
 
@@ -263,5 +272,47 @@ This page answers the most common questions developers encounter when integratin
 
   <Accordion title="How do I return only sports and leagues that have data?">
     Both the `Get Sports` and `Get Leagues` operations include a `hasOfferings` boolean property. Filter your results to only those where `hasOfferings` is `true` to avoid making unnecessary downstream calls for sports or leagues with no available markets.
+  </Accordion>
+
+  <Accordion title="How can I tell if an event was deleted or settled?">
+    Use the `Get Settled Fixtures` endpoint to find out whether a period was settled or whether the event was deleted.
+
+    Deleted events are not returned by the standard `/fixtures` endpoint. Instead, they appear in `/fixtures/settled` with `period.number=0` and `period.status=5`:
+
+    ```json
+    {
+      "id": 933912855,
+      "periods": [
+        {
+          "number": 0,
+          "status": 5,
+          "settlementId": 3637379,
+          "settledAt": "2018-12-24T02:12:06.707Z",
+          "team1Score": 0,
+          "team2Score": 0
+        }
+      ]
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="How do I ensure my affiliate tracking links work?">
+    Any link back to [www.pinnacle.com](https://www.pinnacle.com) must include your affiliate tracking tag. Your tracking links are available from your affiliate account at [affiliates.pinnacle.com](http://affiliates.pinnacle.com).
+
+    A correct tracking link has the following format:
+
+    ```
+    http://affiliates.pinnacle.com/processing/clickthrgh.asp?btag=a_NUMBERb_NUMBER
+    ```
+
+    Replace `NUMBER` with the values from your affiliate account.
+  </Accordion>
+
+  <Accordion title="Can I deep-link to specific odds pages on Pinnacle?">
+    Yes. To link directly to specific odds pages on [www.pinnacle.com](https://www.pinnacle.com), contact [customerservice@pinnacle.com](mailto:customerservice@pinnacle.com) to have deep-linking enabled for your account.
+  </Accordion>
+
+  <Accordion title="What TLS versions does the API support?">
+    The API supports **TLS 1.2** (preferred) and TLS 1.1 to comply with current security requirements.
   </Accordion>
 </AccordionGroup>

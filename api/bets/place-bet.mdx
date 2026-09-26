@@ -1,5 +1,5 @@
 ---
-title: 'Place bets via the Pinnacle Bets API v4'
+title: 'Place Straight, Parlay, and Special Bets — Bets API v4'
 sidebarTitle: 'Place Bets'
 description: 'POST endpoints for placing straight, parlay, and special bets via the Pinnacle Bets API v4, with request fields, error codes, and deduplication guidance.'
 ---
@@ -134,6 +134,10 @@ Place a straight (single) bet on any supported market: `SPREAD`, `MONEYLINE`, `T
   The alternate line identifier, available in the Get Odds response for alternate spreads or totals. If omitted, the bet is placed on the main line.
 </ParamField>
 
+<Warning>
+  **Omitting `altLineId` places the bet on the main line.** If you fetched an alternate spread or total and intend to bet that line, you must pass the corresponding `altLineId`. Sending only `lineId` without `altLineId` will place the bet on the main (standard) line, not the alternate.
+</Warning>
+
 <ParamField body="pitcher1MustStart" type="boolean">
   Baseball only. When `true`, the bet is cancelled if listed Pitcher 1 does not start the game.
 </ParamField>
@@ -236,7 +240,11 @@ Place a straight (single) bet on any supported market: `SPREAD`, `MONEYLINE`, `T
     | `TIME_RESTRICTION` | Too little time has elapsed since your last identical bet |
     | `DUPLICATED_REQUEST` | A bet with this `uniqueRequestId` was already processed |
     | `BETTING_SUSPENDED` | Market is suspended due to anomalous conditions; retry with the next `lineId` |
-    | `SYSTEM_ERROR_3` | Unexpected internal error |
+    | `LISTED_PITCHERS_SELECTION_ERROR` | Baseball only — one or more of the listed pitchers did not match the event |
+    | `RESPONSIBLE_BETTING_LOSS_LIMIT_EXCEEDED` | Your account has reached its total loss limit |
+    | `RESPONSIBLE_BETTING_RISK_LIMIT_EXCEEDED` | Your account has reached its total risk limit |
+    | `LICENCE_RESTRICTION_LIVE_BETTING_BLOCKED` | Live betting is blocked for your account due to licence restrictions |
+    | `SYSTEM_ERROR_3` | An unexpected error occurred; retry the request |
   </Expandable>
 </ResponseField>
 

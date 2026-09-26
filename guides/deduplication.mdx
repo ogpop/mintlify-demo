@@ -1,5 +1,5 @@
 ---
-title: 'Prevent duplicate bets with uniqueRequestId'
+title: 'Bet Deduplication Using uniqueRequestId in Pinnacle'
 sidebarTitle: 'Deduplication'
 description: 'Use uniqueRequestId on every place-bet request so network errors and retries never create duplicate bets — check before retrying and reuse the same ID.'
 ---
@@ -135,7 +135,7 @@ If you receive a `DUPLICATED_REQUEST` error code in a `PROCESSED_WITH_ERROR` res
 
 ## RESUBMIT_REQUEST error
 
-A `RESUBMIT_REQUEST` error (HTTP 400) is different from `DUPLICATED_REQUEST`. It occurs when trading logic is updating internal parameters at the moment of your request — most commonly during high-traffic live betting. This is not an error on your side. Continue to resubmit the **same request with the same `uniqueRequestId`** until you receive a different response.
+A `RESUBMIT_REQUEST` error (HTTP 400) is different from `DUPLICATED_REQUEST`. It occurs when the trading system is momentarily busy processing other activity — most commonly during high-traffic live betting. This is not an error on your side. Continue to resubmit the **same request with the same `uniqueRequestId`** until you receive a different response.
 
 <Tip>
   Generate your UUID as early as possible in your betting workflow — ideally before you even fetch the line — so you always have it available regardless of where in the flow an error occurs.

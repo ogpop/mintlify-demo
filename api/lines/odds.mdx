@@ -1,7 +1,7 @@
 ---
-title: 'Get odds and pricing data — Pinnacle Lines API'
+title: 'Odds and Pricing Data — Pinnacle Lines API Reference'
 sidebarTitle: 'Odds'
-description: 'Retrieve spreads, moneyline, totals, and alternate line prices for any sport via GET /v2/odds using snapshot and delta polling patterns.'
+description: 'Retrieve spreads, moneyline, totals, and team totals for any sport via GET /v2/odds with snapshot and delta polling for real-time pricing.'
 ---
 
 Pricing data is the heart of the Lines API. The `/v2/odds` endpoint returns all four market types — spread, moneyline, totals, and team totals — for every open period of every non-settled event. Like the fixtures endpoint, it supports both snapshot and delta modes: seed your data store with one snapshot call and then poll for incremental updates using the `last` cursor. Delta responses contain only changed periods, not the entire event tree, so your payloads stay small even during high-volume trading windows.
@@ -9,6 +9,10 @@ Pricing data is the heart of the Lines API. The `/v2/odds` endpoint returns all 
 <Note>
   Odds endpoints are subject to a rate limit of **1 request per 2 minutes per endpoint per `sportId`**. Always use the `since` (delta) pattern to stay within this limit. Requests that exceed the rate limit receive a `429 Too Many Requests` response.
 </Note>
+
+<Warning>
+  **`GET /v1/odds` is deprecated** with an end-of-life date of **January 1, 2026**. Use `GET /v2/odds` for all new integrations. The v2 endpoint adds support for team total alternate lines and is the current supported version.
+</Warning>
 
 ---
 
@@ -27,7 +31,7 @@ Returns straight (single-event) odds for all non-settled events in a sport. A pe
 </ParamField>
 
 <ParamField query="oddsFormat" type="string" optional>
-  Format for returned prices. One of `AMERICAN` (default), `DECIMAL`, `HONGKONG`, `INDONESIAN`, or `MALAY`.
+  Format for returned prices. One of `American` (default), `Decimal`, `HongKong`, `Indonesian`, or `Malay`.
 </ParamField>
 
 <ParamField query="since" type="integer" optional>
@@ -270,7 +274,7 @@ Returns odds for non-settled specials (props and futures). Supports snapshot and
 <ParamField query="sportId" type="integer" required>Sport ID.</ParamField>
 <ParamField query="leagueIds" type="array of integers" optional>Filter by league.</ParamField>
 <ParamField query="since" type="integer" optional>Delta cursor from a previous response.</ParamField>
-<ParamField query="oddsFormat" type="string" optional>Price format: `AMERICAN`, `DECIMAL`, `HONGKONG`, `INDONESIAN`, or `MALAY`.</ParamField>
+<ParamField query="oddsFormat" type="string" optional>Price format: `American`, `Decimal`, `HongKong`, `Indonesian`, or `Malay`.</ParamField>
 <ParamField query="specialId" type="integer" optional>Retrieve a single special by its ID.</ParamField>
 
 ### Example response
@@ -324,7 +328,7 @@ Returns all available teaser configurations, including the point spreads offered
 ### Query parameters
 
 <ParamField query="oddsFormat" type="string" required>
-  Format for returned odds: `AMERICAN`, `DECIMAL`, `HONGKONG`, `INDONESIAN`, or `MALAY`.
+  Format for returned odds: `American`, `Decimal`, `HongKong`, `Indonesian`, or `Malay`.
 </ParamField>
 
 ### Example response

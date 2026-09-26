@@ -1,7 +1,7 @@
 ---
-title: 'Get sports and leagues — Pinnacle Lines API'
+title: 'Sports, Leagues, Periods — Pinnacle Lines API Docs'
 sidebarTitle: 'Sports & Leagues'
-description: 'Retrieve available sports and league IDs with offering status using GET /v2/sports and GET /v2/leagues to discover active markets.'
+description: 'Discover active sports, leagues, and period definitions using GET /v2/sports, GET /v2/leagues, and GET /v1/periods to build valid bet requests.'
 ---
 
 Before you can request odds or fixtures, you need the `sportId` and `leagueId` values that the Pinnacle Lines API uses to scope every downstream request. The endpoints on this page let you discover which sports and leagues are currently active, map home and away teams to the `Team1`/`Team2` identifiers used in bet placement, and look up valid period numbers for each sport.
@@ -18,18 +18,15 @@ Returns a list of every sport Pinnacle supports, together with a flag indicating
 
 ### Query parameters
 
-<ParamField query="hasOfferings" type="boolean" optional>
-  When `true`, the response includes only sports that currently have at least one open event or special. Omit this parameter to receive the full sport catalogue regardless of offering status.
-</ParamField>
+This endpoint takes no query parameters. Authenticate with HTTP Basic and call it directly.
 
 ### Example request
 
 <CodeGroup>
 ```bash cURL
-curl -G https://api.pinnacle.com/v2/sports \
+curl https://api.pinnacle.com/v2/sports \
   -H "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
-  -H "Accept: application/json" \
-  --data-urlencode "hasOfferings=true"
+  -H "Accept: application/json"
 ```
 </CodeGroup>
 
@@ -326,3 +323,62 @@ curl https://api.pinnacle.com/v2/currencies \
 <Note>
   Exchange rates are updated every 24 hours following oanda.com. For non-USD currencies, Pinnacle rounds maximum bet amounts **down** to the nearest integer — for example, a USD limit that converts to £345.23 becomes £345.
 </Note>
+
+---
+
+## GET /v1/cancellationreasons
+
+Returns a lookup list of all cancellation reason codes and their descriptions. When a settled fixture or special has been cancelled, the settlement response includes a `cancellationReason.code` field. Use this endpoint to decode those codes into human-readable explanations to display to your users.
+
+### Query parameters
+
+This endpoint takes no query parameters.
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl https://api.pinnacle.com/v1/cancellationreasons \
+  -H "Authorization: Basic U03MyOT23YbzMDc6d3c3O1DQ1" \
+  -H "Accept: application/json"
+```
+</CodeGroup>
+
+### Response fields
+
+<ResponseField name="cancellationReasons" type="array">
+  Array of cancellation reason objects.
+  <Expandable title="Cancellation reason object">
+    <ResponseField name="code" type="string">
+      Cancellation code assigned by Pinnacle, for example `FBS_CW_65`. This value matches the `cancellationReason.code` field in settled fixture and special responses.
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Human-readable explanation of the cancellation reason, for example `"The event was postponed"`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example response
+
+```json
+{
+  "cancellationReasons": [
+    {
+      "code": "FBS_CW_65",
+      "description": "The event was postponed"
+    },
+    {
+      "code": "FBS_CW_1",
+      "description": "The event was cancelled"
+    },
+    {
+      "code": "FBS_CW_2",
+      "description": "Incorrect team listed"
+    }
+  ]
+}
+```
+
+<Tip>
+  Cache the cancellation reason list locally and refresh it infrequently — the list of codes changes rarely. When you encounter a `cancellationReason.code` in a settled event response that is not in your cached list, refresh the list to pick up any new entries.
+</Tip>

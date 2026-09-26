@@ -1,7 +1,7 @@
 ---
-title: 'Get in-running live event state — Lines API'
+title: 'In-Running Live State — Pinnacle Lines API Reference'
 sidebarTitle: 'In-Running'
-description: 'Track live event game state and elapsed time for all in-progress matches with GET /v1/inrunning to power real-time live betting workflows.'
+description: 'Track current game state and elapsed minutes for all live in-progress matches using GET /v1/inrunning to support real-time live betting.'
 ---
 
 When a match goes live, the game state changes rapidly — a soccer match transitions through first half, half time, second half, and potentially extra time and penalties. The `/v1/inrunning` endpoint gives you the current `state` integer and elapsed minutes for every active live event, letting you display an accurate game clock and gate your bet-placement logic on specific game states.

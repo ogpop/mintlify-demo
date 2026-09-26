@@ -129,7 +129,7 @@ Reading the delta response above:
 
 <CardGroup cols={2}>
   <Card title="/fixtures" icon="calendar">
-    Straight-bet event fixtures. Supports snapshot and delta via the `since` parameter.
+    Straight-bet event fixtures. Supports snapshot and delta via the `since` parameter. Snapshot responses are cached 60 seconds.
   </Card>
   <Card title="/fixtures/special" icon="star">
     Props and futures (specials) fixtures. Supports snapshot and delta.
@@ -231,5 +231,5 @@ poll();
 </Tip>
 
 <Warning>
-  Never call `/odds` or `/fixtures` in a loop for each sport or league separately. Always include **all** league IDs you need in a single `leagueIds` array on one request. Looping per-league wastes quota and may trigger rate limiting.
+  Never call `/odds` or `/fixtures` in a loop for each sport, league, or fixture separately. Always include **all** league IDs you need in a single `leagueIds` array on one request, and all event IDs you need in a single `eventIds` array. Looping per-league or per-fixture wastes quota and may trigger rate limiting.
 </Warning>

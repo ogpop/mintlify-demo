@@ -1,5 +1,5 @@
 ---
-title: 'Place teaser bets using the Pinnacle API'
+title: 'Teaser Bets: Step-by-Step Guide for the Pinnacle API'
 sidebarTitle: 'Teaser Bets'
 description: 'Use the four-step teaser flow — discover groups, fetch adjusted odds, validate the line, then place — to submit teaser wagers via the Pinnacle API.'
 ---
@@ -105,7 +105,7 @@ Teaser bets let you adjust the point spread or total for multiple legs in your f
             "eventId": 840000123,
             "periodNumber": 0,
             "betType": "SPREAD",
-            "team": "Team1",
+            "team": "TEAM1",
             "handicap": 9.5
           },
           {
@@ -155,11 +155,11 @@ Teaser bets let you adjust the point spread or total for multiple legs in your f
 
   <Step title="Place Teaser Bet">
 
-    Submit `POST /v4/bets/straight` with `betType` set appropriately. Use the `teaserId`, leg details, and `lineId` values from the previous steps to build the request. Teaser bets are placed via the same straight-bet endpoint, identified by the teaser-specific `betType`.
+    Submit `POST /v4/bets/teaser` with the `teaserId`, leg details, and `lineId` values from the previous steps. This dedicated endpoint accepts only teaser bet requests and returns the confirmed price alongside per-leg results.
 
     ```bash
     curl -u username:password \
-      -X POST "https://api.pinnacle.com/v4/bets/straight" \
+      -X POST "https://api.pinnacle.com/v4/bets/teaser" \
       -H "Content-Type: application/json" \
       -d '{
         "uniqueRequestId": "d5cc50e4-284d-4d50-8d49-429bdc4f2a48",
@@ -173,7 +173,7 @@ Teaser bets let you adjust the point spread or total for multiple legs in your f
             "betType": "SPREAD",
             "lineId": 527600100,
             "eventId": 840000123,
-            "team": "Team1"
+            "team": "TEAM1"
           },
           {
             "legId": "teaser-leg-002",

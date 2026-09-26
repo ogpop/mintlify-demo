@@ -69,6 +69,49 @@ This page tracks all notable changes to the Pinnacle API, listed in reverse chro
 
 ---
 
+## October 7, 2022 — Lines API
+
+<Warning>
+  **DEPRECATED — `team1ScoreSets` and `team2ScoreSets` properties**
+
+  The `team1ScoreSets` and `team2ScoreSets` properties are deprecated. Use `team1Score` and `team2Score` instead.
+</Warning>
+
+---
+
+## September 12, 2022 — Lines API
+
+- **IMPROVEMENT — Tennis event trading model:** Tennis events now use explicit `resultingUnit` values instead of embedding result details in team names.
+  - Set Handicaps markets now use `spreads` (handicap points removed from team names).
+  - Explicit `resultingUnit` values (e.g., `Sets`, `Games`) are used per event.
+  - For live tennis, markets are split across multiple events by period `number` instead of all being in period `0` with descriptions in team names. Retrieve period descriptions with `/v1/periods?sportId=33`.
+
+---
+
+## August 16, 2022 — Lines API
+
+- **FEATURE — Score and red card properties in `/odds`:** Period-level score and red card properties are now available in the `/odds` response for Match (`number=0`) and Extra Time (`number=3`) periods.
+
+---
+
+## May 31, 2022 — Bets API
+
+- **FEATURE — `resultingUnit` in `/bets` response:** A new `resultingUnit` property has been added to the `/bets` response.
+
+---
+
+## April 18, 2022
+
+- **UPDATE — Rate limiting logic:** Rate limiting rules have been updated. See the [Rate Limiting](/concepts/rate-limiting) page for current thresholds.
+
+---
+
+## February 9, 2022 — Lines API
+
+- **FEATURE — Timestamp properties in `/v1/odds`:** New properties `moneylineUpdatedAt`, `spreadUpdatedAt`, `totalUpdatedAt`, and `teamTotalUpdatedAt` have been added to the `/v1/odds` and `/v1/odds/teaser` responses.
+
+---
+
 ## February 18, 2021
 
 <Warning>
